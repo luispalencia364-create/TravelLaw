@@ -34,8 +34,9 @@ class _OrientacionPageState extends ConsumerState<OrientacionPage> {
             final q = normalizar(_consulta.trim());
             final filtradas = guias.whenData(
               (lista) => lista.where((g) {
-                if (_categoria != null && g.categoria != _categoria)
+                if (_categoria != null && g.categoria != _categoria) {
                   return false;
+                }
                 if (q.isEmpty) return true;
                 final texto = normalizar(
                   '${g.tituloEs} ${g.tituloEn ?? ''} ${g.contenidoEs} ${g.contenidoEn ?? ''}',

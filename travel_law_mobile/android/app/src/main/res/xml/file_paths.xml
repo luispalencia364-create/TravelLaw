@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Ruta raíz para permitir compatibilidad amplia -->
+    <root-path name="root" path="."/>
+    <!-- Directorio privado de la app: getApplicationDocumentsDirectory() -->
+    <files-path name="app_documents" path="."/>
+    <!-- Directorio de caché -->
+    <cache-path name="app_cache" path="."/>
+    <!-- Directorio externo privado: getExternalStorageDirectory() -->
+    <external-files-path name="external_files" path="."/>
+    <!-- Carpeta pública Downloads y almacenamiento externo -->
+    <external-path name="external_storage" path="."/>
+</paths>

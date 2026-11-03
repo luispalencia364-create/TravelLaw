@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:open_file/open_file.dart';
 
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/data/auth_repository.dart';
@@ -32,28 +33,77 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
     setState(() => _ocupados.add(item.idDestino));
     try {
       final client = ref.read(supabaseProvider);
+
+      // 1. Obtiene el paquete JSON desde Supabase.
       final paquete = await client.rpc(
         'paquete_destino',
         params: {'p_id_destino': item.idDestino},
       );
-      await ref
+
+      final paqueteMap = Map<String, dynamic>.from(paquete as Map);
+
+      // 2. Genera el PDF con la plantilla y lo guarda en Descargas.
+      final rutaPdf = await ref
           .read(descargasServiceProvider)
-          .guardar(item.idDestino, Map<String, dynamic>.from(paquete as Map));
+          .guardar(item.idDestino, item.nombre, paqueteMap);
+
+      // 3. Estadística de descargas (falla silenciosa).
       try {
-        // Estadística de descargas; si falla no invalida el paquete guardado.
         await client.rpc(
           'registrar_descarga',
           params: {'p_id_destino': item.idDestino},
         );
       } catch (_) {}
+
+      // Actualiza el estado local.
       ref.invalidate(paqueteLocalProvider(item.idDestino));
-      _mensaje('Paquete de ${item.nombre} descargado.');
-    } catch (_) {
-      _mensaje(
-        'No se pudo descargar. Revisa tu conexión e inténtalo de nuevo.',
-      );
+
+      if (!mounted) return;
+
+      // 4. Abre automáticamente el PDF generado para visualización inmediata.
+      await _abrirPdf(rutaPdf);
+
+      if (!mounted) return;
+
+      // 5. Notificación con confirmación de guardado en el administrador de archivos.
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            content: Text(
+              'PDF guardado en tu carpeta de Descargas (TravelLaw).\n'
+              'Disponible en el Administrador de archivos.',
+            ),
+            duration: const Duration(seconds: 6),
+            action: SnackBarAction(
+              label: 'Abrir PDF',
+              onPressed: () => _abrirPdf(rutaPdf),
+            ),
+          ),
+        );
+    } catch (e, st) {
+      debugPrint('Error en descarga: $e\n$st');
+      _mensaje('Error al descargar: $e');
     } finally {
       if (mounted) setState(() => _ocupados.remove(item.idDestino));
+    }
+  }
+
+  Future<void> _abrirPdf(String ruta) async {
+    try {
+      final resultado = await ref.read(descargasServiceProvider).abrirPdf(ruta);
+      if (resultado.type != ResultType.done && mounted) {
+        if (resultado.type == ResultType.noAppToOpen) {
+          _mensaje(
+            'No se encontró una aplicación para abrir PDFs. '
+            'Instala un lector de PDF (ej. Google PDF Viewer, Adobe).',
+          );
+        } else {
+          _mensaje('No se pudo abrir el archivo: ${resultado.message}');
+        }
+      }
+    } catch (e) {
+      if (mounted) _mensaje('Error al abrir PDF: $e');
     }
   }
 
@@ -62,7 +112,9 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
       context: context,
       builder: (context) => AlertDialog(
         title: Text('Eliminar ${item.nombre}'),
-        content: const Text('Se borrará el paquete guardado en este teléfono.'),
+        content: const Text(
+          'Se borrará el archivo PDF guardado en este dispositivo.',
+        ),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(false),
@@ -76,9 +128,10 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
       ),
     );
     if (confirmar != true) return;
+
     await ref.read(descargasServiceProvider).eliminar(item.idDestino);
     ref.invalidate(paqueteLocalProvider(item.idDestino));
-    _mensaje('Paquete eliminado.');
+    _mensaje('PDF eliminado.');
   }
 
   @override
@@ -94,9 +147,9 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
             color: Theme.of(context).colorScheme.secondaryContainer,
             padding: const EdgeInsets.all(12),
             child: Text(
-              'Cada paquete guarda normas, zonas restringidas, contactos de '
-              'emergencia, guías, expresiones, lugares y alertas recientes. '
-              'El mapa necesita conexión.',
+              'Cada paquete genera un PDF oficial con normas, zonas restringidas, '
+              'contactos de emergencia SOS, guías, expresiones y alertas recientes. '
+              'Los archivos quedan en tu carpeta Descargas.',
               style: TextStyle(
                 color: Theme.of(context).colorScheme.onSecondaryContainer,
               ),
@@ -107,14 +160,13 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
               value: catalogo,
               emptyIcon: Icons.download_for_offline_outlined,
               emptyMessage: 'Sin paquetes disponibles',
-              onRefresh: () async {
-                await ref.refresh(catalogoProvider.future);
-              },
+              onRefresh: () => ref.refresh(catalogoProvider.future),
               itemBuilder: (context, item) => _PaqueteTile(
                 item: item,
                 ocupado: _ocupados.contains(item.idDestino),
                 onDescargar: () => _descargar(item),
                 onEliminar: () => _eliminar(item),
+                onAbrir: (ruta) => _abrirPdf(ruta),
               ),
             ),
           ),
@@ -130,18 +182,19 @@ class _PaqueteTile extends ConsumerWidget {
     required this.ocupado,
     required this.onDescargar,
     required this.onEliminar,
+    required this.onAbrir,
   });
 
   final CatalogoItem item;
   final bool ocupado;
   final VoidCallback onDescargar;
   final VoidCallback onEliminar;
+  final void Function(String ruta) onAbrir;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final local = ref
-        .watch(paqueteLocalProvider(item.idDestino))
-        .maybeWhen(data: (p) => p, orElse: () => null);
+    final localAsync = ref.watch(paqueteLocalProvider(item.idDestino));
+    final local = localAsync.maybeWhen(data: (p) => p, orElse: () => null);
 
     final String estado;
     final String boton;
@@ -149,25 +202,28 @@ class _PaqueteTile extends ConsumerWidget {
       estado = 'No descargado  ·  ~${_tamano(item.tamanoKb * 1024)}';
       boton = 'Descargar';
     } else if (local.version != item.version) {
-      estado =
-          'Actualización disponible  ·  tienes la versión ${local.version}';
+      estado = 'Actualización disponible  ·  tienes la v${local.version}';
       boton = 'Actualizar';
     } else {
-      estado =
-          'Al día  ·  ${_tamano(local.bytes)}  ·  versión ${local.version}';
+      estado = 'Al día  ·  ${_tamano(local.bytes)}  ·  v${local.version}';
       boton = '';
     }
 
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
+        onTap: local != null ? () => onAbrir(local.rutaPdf) : null,
         leading: Icon(
           local == null
-              ? Icons.cloud_download_outlined
-              : Icons.download_done_outlined,
+              ? Icons.picture_as_pdf_outlined
+              : Icons.picture_as_pdf,
+          color: local != null ? Theme.of(context).colorScheme.primary : null,
         ),
         title: Text(item.nombre),
-        subtitle: Text(estado),
+        subtitle: Text(
+          local != null ? '$estado\nToca para abrir PDF' : estado,
+        ),
+        isThreeLine: local != null,
         trailing: ocupado
             ? const SizedBox(
                 width: 24,
@@ -182,12 +238,18 @@ class _PaqueteTile extends ConsumerWidget {
                       onPressed: onDescargar,
                       child: Text(boton),
                     ),
-                  if (local != null)
+                  if (local != null) ...[
                     IconButton(
-                      tooltip: 'Eliminar',
+                      tooltip: 'Abrir PDF',
+                      icon: const Icon(Icons.open_in_new_outlined),
+                      onPressed: () => onAbrir(local.rutaPdf),
+                    ),
+                    IconButton(
+                      tooltip: 'Eliminar PDF',
                       icon: const Icon(Icons.delete_outline),
                       onPressed: onEliminar,
                     ),
+                  ],
                 ],
               ),
       ),
