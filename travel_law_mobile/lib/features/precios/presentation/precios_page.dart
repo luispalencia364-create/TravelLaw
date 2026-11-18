@@ -3,14 +3,20 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../auth/data/perfil_provider.dart';
+import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/presentation/destino_selector.dart';
 import '../data/precios_repository.dart';
+import 'reporte_cobro_dialog.dart';
 
-class PreciosPage extends StatelessWidget {
+class PreciosPage extends ConsumerWidget {
   const PreciosPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final perfil = ref.watch(perfilProvider).asData?.value;
+    final destino = ref.watch(destinoEfectivoProvider);
+
     return DefaultTabController(
       length: 2,
       child: Scaffold(
@@ -23,6 +29,28 @@ class PreciosPage extends StatelessWidget {
             ],
           ),
         ),
+        floatingActionButton: perfil != null && destino != null
+            ? FloatingActionButton.extended(
+                onPressed: () async {
+                  final creado = await showDialog<bool>(
+                    context: context,
+                    builder: (_) => ReporteCobroDialog(destino: destino),
+                  );
+                  if (creado == true && context.mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(
+                        content: Text(
+                          'Reporte enviado. Quedará en revisión por el equipo '
+                          'de moderación.',
+                        ),
+                      ),
+                    );
+                  }
+                },
+                icon: const Icon(Icons.report_gmailerrorred_outlined),
+                label: const Text('Reportar cobro'),
+              )
+            : null,
         body: ConDestino(
           builder: (context, destino) => TabBarView(
             children: [
@@ -33,7 +61,8 @@ class PreciosPage extends StatelessWidget {
                   emptyMessage:
                       'Sin precios de referencia en ${destino.nombre}',
                   onRefresh: () async {
-                    await ref.refresh(preciosProvider(destino.id).future);
+                    ref.invalidate(preciosProvider(destino.id));
+                    await ref.read(preciosProvider(destino.id).future);
                   },
                   itemBuilder: (context, p) => Card(
                     margin: const EdgeInsets.only(bottom: 8),
@@ -63,8 +92,11 @@ class PreciosPage extends StatelessWidget {
                   value: ref.watch(misReportesCobroProvider),
                   emptyIcon: Icons.receipt_long_outlined,
                   emptyMessage: 'Aún no has reportado cobros',
+                  emptyDetail:
+                      'Usa el botón "Reportar cobro" si te cobraron de más.',
                   onRefresh: () async {
-                    await ref.refresh(misReportesCobroProvider.future);
+                    ref.invalidate(misReportesCobroProvider);
+                    await ref.read(misReportesCobroProvider.future);
                   },
                   itemBuilder: (context, r) => Card(
                     margin: const EdgeInsets.only(bottom: 8),

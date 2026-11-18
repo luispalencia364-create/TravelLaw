@@ -3,16 +3,43 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../auth/data/perfil_provider.dart';
+import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/presentation/destino_selector.dart';
 import '../data/comunidad_repository.dart';
+import 'crear_publicacion_dialog.dart';
 
-class ComunidadPage extends StatelessWidget {
+class ComunidadPage extends ConsumerWidget {
   const ComunidadPage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final perfil = ref.watch(perfilProvider).asData?.value;
+    final destino = ref.watch(destinoEfectivoProvider);
+
     return Scaffold(
       appBar: AppBar(title: const Text('Comunidad de viajeros')),
+      floatingActionButton: perfil != null && destino != null
+          ? FloatingActionButton.extended(
+              onPressed: () async {
+                final creada = await showDialog<bool>(
+                  context: context,
+                  builder: (_) => CrearPublicacionDialog(destino: destino),
+                );
+                if (creada == true && context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        '¡Publicación compartida con la comunidad!',
+                      ),
+                    ),
+                  );
+                }
+              },
+              icon: const Icon(Icons.edit_outlined),
+              label: const Text('Publicar'),
+            )
+          : null,
       body: ConDestino(
         builder: (context, destino) => Consumer(
           builder: (context, ref, _) => AsyncListView<Publicacion>(
@@ -22,7 +49,8 @@ class ComunidadPage extends StatelessWidget {
             emptyDetail:
                 'Aquí verás recomendaciones y fotos de otros viajeros.',
             onRefresh: () async {
-              await ref.refresh(publicacionesProvider(destino.id).future);
+              ref.invalidate(publicacionesProvider(destino.id));
+              await ref.read(publicacionesProvider(destino.id).future);
             },
             itemBuilder: (context, p) => Card(
               margin: const EdgeInsets.only(bottom: 8),

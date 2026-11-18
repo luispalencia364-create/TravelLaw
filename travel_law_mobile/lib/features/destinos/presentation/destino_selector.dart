@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../data/destino_activo_provider.dart';
 import '../data/destinos_repository.dart';
@@ -15,32 +16,20 @@ class DestinoSelector extends ConsumerWidget {
     showModalBottomSheet<void>(
       context: context,
       showDragHandle: true,
-      builder: (sheetContext) => SafeArea(
-        child: Consumer(
-          builder: (context, ref2, _) {
-            final lista = ref2
-                .watch(destinosProvider)
-                .maybeWhen(data: (l) => l, orElse: () => const <Destino>[]);
-            return ListView(
-              shrinkWrap: true,
-              children: [
-                for (final d in lista)
-                  ListTile(
-                    leading: const Icon(Icons.place_outlined),
-                    title: Text(d.nombre),
-                    subtitle: Text(d.municipio),
-                    selected: d.id == destino.id,
-                    onTap: () {
-                      ref
-                          .read(destinoActivoProvider.notifier)
-                          .seleccionar(d.id);
-                      Navigator.of(sheetContext).pop();
-                    },
-                  ),
-              ],
-            );
-          },
-        ),
+      builder: (sheetContext) => Consumer(
+        builder: (context, ref2, _) {
+          final lista = ref2
+              .watch(destinosProvider)
+              .maybeWhen(data: (l) => l, orElse: () => const <Destino>[]);
+          return _SelectorDestinos(
+            destinos: lista,
+            seleccionado: destino.id,
+            onSeleccionar: (id) {
+              ref.read(destinoActivoProvider.notifier).seleccionar(id);
+              Navigator.of(sheetContext).pop();
+            },
+          );
+        },
       ),
     );
   }
@@ -68,6 +57,80 @@ class DestinoSelector extends ConsumerWidget {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Lista de destinos con buscador por nombre o municipio.
+class _SelectorDestinos extends StatefulWidget {
+  const _SelectorDestinos({
+    required this.destinos,
+    required this.seleccionado,
+    required this.onSeleccionar,
+  });
+
+  final List<Destino> destinos;
+  final int seleccionado;
+  final ValueChanged<int> onSeleccionar;
+
+  @override
+  State<_SelectorDestinos> createState() => _SelectorDestinosState();
+}
+
+class _SelectorDestinosState extends State<_SelectorDestinos> {
+  String _consulta = '';
+
+  @override
+  Widget build(BuildContext context) {
+    final q = normalizar(_consulta.trim());
+    final filtrados = q.isEmpty
+        ? widget.destinos
+        : widget.destinos
+              .where(
+                (d) => normalizar('${d.nombre} ${d.municipio}').contains(q),
+              )
+              .toList();
+
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+            child: TextField(
+              decoration: const InputDecoration(
+                hintText: 'Buscar destino por nombre',
+                prefixIcon: Icon(Icons.search),
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (v) => setState(() => _consulta = v),
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                if (filtrados.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'No se encontraron destinos para "$_consulta".',
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                for (final d in filtrados)
+                  ListTile(
+                    leading: const Icon(Icons.place_outlined),
+                    title: Text(d.nombre),
+                    subtitle: Text(d.municipio),
+                    selected: d.id == widget.seleccionado,
+                    onTap: () => widget.onSeleccionar(d.id),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

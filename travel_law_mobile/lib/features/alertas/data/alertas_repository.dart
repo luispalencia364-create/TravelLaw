@@ -29,7 +29,8 @@ class AlertaItem {
 
 const _columnas = 'id_alerta, tipo, descripcion, estado, fecha_evento';
 
-/// Alertas vigentes del destino (últimos 30 días, sin rechazadas ni vencidas).
+/// Alertas vigentes del destino (últimos 30 días). Solo se muestran las
+/// verificadas: las pendientes quedan ocultas hasta que el staff las active.
 final alertasDestinoProvider = FutureProvider.autoDispose
     .family<List<AlertaItem>, int>((ref, idDestino) async {
       final desde = DateTime.now().subtract(const Duration(days: 30));
@@ -38,23 +39,27 @@ final alertasDestinoProvider = FutureProvider.autoDispose
           .from('alerta')
           .select(_columnas)
           .eq('id_destino', idDestino)
-          .inFilter('estado', ['pendiente_moderacion', 'verificada'])
+          .eq('estado', 'verificada')
           .gte('fecha_evento', desde.toUtc().toIso8601String())
           .order('fecha_evento', ascending: false);
       return data.map(AlertaItem.fromMap).toList();
     });
 
-/// Alertas creadas por el usuario, en cualquier estado.
-final misAlertasProvider = FutureProvider.autoDispose<List<AlertaItem>>((
-  ref,
-) async {
-  final client = ref.watch(supabaseProvider);
-  final uid = client.auth.currentUser?.id;
-  if (uid == null) return const <AlertaItem>[];
-  final data = await client
-      .from('alerta')
-      .select(_columnas)
-      .eq('id_usuario', uid)
-      .order('fecha_evento', ascending: false);
-  return data.map(AlertaItem.fromMap).toList();
+/// Alertas creadas por el usuario (van a estado 'pendiente_moderacion' automáticamente).
+final usuarioAlertasProvider = FutureProvider.autoDispose
+    .family<List<AlertaItem>, String?>((ref, uid) async {
+      final client = ref.watch(supabaseProvider);
+      if (uid == null) return const <AlertaItem>[];
+      final data = await client
+          .from('alerta')
+          .select(_columnas)
+          .eq('id_usuario', uid)
+          .order('fecha_creacion', ascending: false);
+      return data.map(AlertaItem.fromMap).toList();
+    });
+
+/// Alertas creadas por el usuario autenticado actual.
+final misAlertasProvider = FutureProvider.autoDispose<List<AlertaItem>>((ref) {
+  final uid = ref.watch(supabaseProvider).auth.currentUser?.id;
+  return ref.watch(usuarioAlertasProvider(uid).future);
 });

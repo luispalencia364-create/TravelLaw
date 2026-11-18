@@ -20,7 +20,7 @@ class AppDrawer extends ConsumerWidget {
       skipLoadingOnReload: true,
       data: (v) => v,
       loading: () => null,
-      error: (_, __) => null,
+      error: (_, _) => null,
     );
 
     return Drawer(
@@ -84,6 +84,30 @@ class AppDrawer extends ConsumerWidget {
           ),
           _modulo(context, Icons.sos_outlined, 'Emergencias (SOS)', Rutas.sos),
           const Divider(),
+          if ((p?.esModerador ?? false) || (p?.esAdministrador ?? false))
+            ListTile(
+              leading: const Icon(Icons.fact_check_outlined),
+              title: const Text('Moderación'),
+              subtitle: const Text('Alertas, reportes, SOS y turistas'),
+              onTap: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop();
+                router.push(Rutas.moderacion);
+              },
+            ),
+          if (p?.esAdministrador ?? false) ...[
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings_outlined),
+              title: const Text('Panel de administración'),
+              subtitle: const Text('Control total de la app'),
+              onTap: () {
+                final router = GoRouter.of(context);
+                Navigator.of(context).pop();
+                router.push(Rutas.admin);
+              },
+            ),
+            const Divider(),
+          ],
           ListTile(
             leading: const Icon(Icons.person_outline),
             title: const Text('Mi perfil'),

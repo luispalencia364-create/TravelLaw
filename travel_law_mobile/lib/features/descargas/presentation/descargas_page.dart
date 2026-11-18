@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:open_file/open_file.dart';
 
+import '../../../core/permissions/permisos_almacenamiento.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../auth/data/auth_repository.dart';
 import '../data/descargas_service.dart';
@@ -30,6 +31,13 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
   }
 
   Future<void> _descargar(CatalogoItem item) async {
+    // Sin acceso al almacenamiento no se puede escribir en Descargas/TravelLaw.
+    final permiso = await PermisosAlmacenamiento.solicitar(context);
+    if (!permiso) {
+      _mensaje('Se necesita acceso al almacenamiento para guardar el PDF.');
+      return;
+    }
+
     setState(() => _ocupados.add(item.idDestino));
     try {
       final client = ref.read(supabaseProvider);
@@ -127,7 +135,14 @@ class _DescargasPageState extends ConsumerState<DescargasPage> {
         ],
       ),
     );
-    if (confirmar != true) return;
+    if (confirmar != true || !mounted) return;
+
+    // En Android 11+ borrar de la carpeta pública también requiere el permiso.
+    final permiso = await PermisosAlmacenamiento.solicitar(context);
+    if (!permiso) {
+      _mensaje('Se necesita acceso al almacenamiento para eliminar el PDF.');
+      return;
+    }
 
     await ref.read(descargasServiceProvider).eliminar(item.idDestino);
     ref.invalidate(paqueteLocalProvider(item.idDestino));
@@ -214,15 +229,11 @@ class _PaqueteTile extends ConsumerWidget {
       child: ListTile(
         onTap: local != null ? () => onAbrir(local.rutaPdf) : null,
         leading: Icon(
-          local == null
-              ? Icons.picture_as_pdf_outlined
-              : Icons.picture_as_pdf,
+          local == null ? Icons.picture_as_pdf_outlined : Icons.picture_as_pdf,
           color: local != null ? Theme.of(context).colorScheme.primary : null,
         ),
         title: Text(item.nombre),
-        subtitle: Text(
-          local != null ? '$estado\nToca para abrir PDF' : estado,
-        ),
+        subtitle: Text(local != null ? '$estado\nToca para abrir PDF' : estado),
         isThreeLine: local != null,
         trailing: ocupado
             ? const SizedBox(

@@ -11,4 +11,7 @@ class Rutas {
   static const descargas = '/descargas';
   static const sos = '/sos';
   static const configuracion = '/configuracion';
+  static const admin = '/admin';
+  static const adminContenido = '/admin-contenido';
+  static const moderacion = '/moderacion';
 }

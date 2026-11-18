@@ -54,7 +54,10 @@ class AuthRepository {
     if (uid == null) return null;
     return _client
         .from('usuario')
-        .select('nombre, email, idioma, estado, fecha_registro, rol(nombre)')
+        .select(
+          'id_usuario, nombre, email, idioma, estado, fecha_registro, '
+          'es_super_admin, rol(nombre)',
+        )
         .eq('id_usuario', uid)
         .maybeSingle();
   }

@@ -4,6 +4,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/admin/presentation/admin_page.dart';
+import '../features/admin/presentation/contenido_page.dart';
+import '../features/admin/presentation/moderacion_page.dart';
 import '../features/alertas/presentation/alertas_page.dart';
 import '../features/auth/data/auth_repository.dart';
 import '../features/auth/presentation/forgot_password_page.dart';
@@ -96,6 +99,18 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Rutas.configuracion,
         builder: (context, state) => const ConfiguracionPage(),
+      ),
+      GoRoute(
+        path: Rutas.admin,
+        builder: (context, state) => const AdminPage(),
+      ),
+      GoRoute(
+        path: Rutas.adminContenido,
+        builder: (context, state) => const ContenidoPage(),
+      ),
+      GoRoute(
+        path: Rutas.moderacion,
+        builder: (context, state) => const ModeracionPage(),
       ),
     ],
   );
