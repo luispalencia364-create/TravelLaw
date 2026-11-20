@@ -3,6 +3,8 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../destinos/data/destinos_repository.dart';
+import '../../lugares/data/lugares_repository.dart';
 
 /// Texto de error amable en español (los RPC devuelven mensajes en español).
 String mensajeErrorContenido(Object error) {
@@ -146,7 +148,12 @@ class NormaAdmin {
     fechaActualizacion: parseFecha(m['fecha_actualizacion']),
   );
 
-  static const tipos = {'legal': 'Legal', 'ambiental': 'Ambiental', 'cultural': 'Cultural', 'otro': 'Otro'};
+  static const tipos = {
+    'legal': 'Legal',
+    'ambiental': 'Ambiental',
+    'cultural': 'Cultural',
+    'otro': 'Otro',
+  };
   String get tipoEtiqueta => tipos[tipo] ?? capitalizar(tipo);
 }
 
@@ -269,21 +276,30 @@ class ContenidoRepository {
   }
 
   Future<List<LugarAdmin>> listarLugares({int? idDestino}) async {
-    final data = await _client.rpc('listar_lugares_admin', params: {'p_id_destino': idDestino});
+    final data = await _client.rpc(
+      'listar_lugares_admin',
+      params: {'p_id_destino': idDestino},
+    );
     return (data as List)
         .map((m) => LugarAdmin.fromMap(Map<String, dynamic>.from(m as Map)))
         .toList();
   }
 
   Future<List<NormaAdmin>> listarNormas({int? idDestino}) async {
-    final data = await _client.rpc('listar_normas_admin', params: {'p_id_destino': idDestino});
+    final data = await _client.rpc(
+      'listar_normas_admin',
+      params: {'p_id_destino': idDestino},
+    );
     return (data as List)
         .map((m) => NormaAdmin.fromMap(Map<String, dynamic>.from(m as Map)))
         .toList();
   }
 
   Future<List<ContactoAdmin>> listarContactos({int? idDestino}) async {
-    final data = await _client.rpc('listar_contactos_admin', params: {'p_id_destino': idDestino});
+    final data = await _client.rpc(
+      'listar_contactos_admin',
+      params: {'p_id_destino': idDestino},
+    );
     return (data as List)
         .map((m) => ContactoAdmin.fromMap(Map<String, dynamic>.from(m as Map)))
         .toList();
@@ -303,12 +319,15 @@ class ContenidoRepository {
     required double lat,
     required double lng,
   }) async {
-    final id = await _client.rpc('admin_crear_destino', params: {
-      'p_nombre': nombre,
-      'p_municipio': municipio,
-      'p_lat': lat,
-      'p_lng': lng,
-    });
+    final id = await _client.rpc(
+      'admin_crear_destino',
+      params: {
+        'p_nombre': nombre,
+        'p_municipio': municipio,
+        'p_lat': lat,
+        'p_lng': lng,
+      },
+    );
     return id as int;
   }
 
@@ -340,14 +359,17 @@ class ContenidoRepository {
     required double lat,
     required double lng,
   }) async {
-    final id = await _client.rpc('admin_crear_lugar', params: {
-      'p_id_destino': idDestino,
-      'p_id_categoria': idCategoria,
-      'p_nombre': nombre,
-      'p_horario': horario,
-      'p_lat': lat,
-      'p_lng': lng,
-    });
+    final id = await _client.rpc(
+      'admin_crear_lugar',
+      params: {
+        'p_id_destino': idDestino,
+        'p_id_categoria': idCategoria,
+        'p_nombre': nombre,
+        'p_horario': horario,
+        'p_lat': lat,
+        'p_lng': lng,
+      },
+    );
     return id as int;
   }
 
@@ -394,7 +416,8 @@ class ContenidoRepository {
       'titulo_es': tituloEs,
       if (tituloEn?.trim().isNotEmpty ?? false) 'titulo_en': tituloEn!.trim(),
       'contenido_es': contenidoEs,
-      if (contenidoEn?.trim().isNotEmpty ?? false) 'contenido_en': contenidoEn!.trim(),
+      if (contenidoEn?.trim().isNotEmpty ?? false)
+        'contenido_en': contenidoEn!.trim(),
       if (fuente?.trim().isNotEmpty ?? false) 'fuente': fuente!.trim(),
       'vigente': true,
     });
@@ -432,10 +455,7 @@ class ContenidoRepository {
     required int id,
     required bool vigente,
   }) async {
-    await _client
-        .from('norma')
-        .update({'vigente': vigente})
-        .eq('id_norma', id);
+    await _client.from('norma').update({'vigente': vigente}).eq('id_norma', id);
   }
 
   // Destinos (eliminación) ------------------------------------------------
@@ -453,13 +473,16 @@ class ContenidoRepository {
     double? lng,
     String estado = 'verificada',
   }) async {
-    final id = await _client.rpc('admin_crear_alerta', params: {
-      'p_id_destino': idDestino,
-      'p_tipo': tipo,
-      'p_descripcion': descripcion,
-      'p_fecha_evento': fechaEvento.toUtc().toIso8601String(),
-      'p_estado': estado,
-    });
+    final id = await _client.rpc(
+      'admin_crear_alerta',
+      params: {
+        'p_id_destino': idDestino,
+        'p_tipo': tipo,
+        'p_descripcion': descripcion,
+        'p_fecha_evento': fechaEvento.toUtc().toIso8601String(),
+        'p_estado': estado,
+      },
+    );
     return id as String;
   }
 
@@ -539,9 +562,10 @@ final destinosAdminProvider = FutureProvider.autoDispose<List<DestinoAdmin>>(
   (ref) => ref.watch(contenidoRepositoryProvider).listarDestinos(),
 );
 
-final categoriasLugarProvider = FutureProvider.autoDispose<List<CategoriaLugar>>(
-  (ref) => ref.watch(contenidoRepositoryProvider).listarCategorias(),
-);
+final categoriasLugarProvider =
+    FutureProvider.autoDispose<List<CategoriaLugar>>(
+      (ref) => ref.watch(contenidoRepositoryProvider).listarCategorias(),
+    );
 
 final lugaresAdminProvider = FutureProvider.autoDispose<List<LugarAdmin>>(
   (ref) => ref.watch(contenidoRepositoryProvider).listarLugares(),
@@ -567,4 +591,7 @@ void refrescarContenido(WidgetRef ref) {
   ref.invalidate(normasAdminProvider);
   ref.invalidate(contactosAdminProvider);
   ref.invalidate(alertasAdminProvider);
+  // Listados públicos: el inicio y los selectores deben ver los cambios.
+  ref.invalidate(destinosProvider);
+  ref.invalidate(lugaresProvider);
 }

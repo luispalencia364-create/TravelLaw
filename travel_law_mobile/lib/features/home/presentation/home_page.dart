@@ -8,6 +8,7 @@ import '../../../core/utils/text_utils.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/data/destinos_repository.dart';
+import '../../lugares/data/lugares_repository.dart';
 import '../../ubicacion/data/ubicacion_provider.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/home_map.dart';
@@ -33,6 +34,7 @@ class _HomePageState extends ConsumerState<HomePage>
   bool _mapaListo = false;
   bool _centradoEnUsuario = false;
   Destino? _seleccionado;
+  LugarPublico? _lugarSeleccionado;
   String _consulta = '';
 
   @override
@@ -93,7 +95,10 @@ class _HomePageState extends ConsumerState<HomePage>
 
   void _seleccionar(Destino destino) {
     FocusScope.of(context).unfocus();
-    setState(() => _seleccionado = destino);
+    setState(() {
+      _seleccionado = destino;
+      _lugarSeleccionado = null;
+    });
     ref.read(destinoActivoProvider.notifier).seleccionar(destino.id);
     _moverMapa(destino.posicion, 13);
     if (_scrollController.hasClients) {
@@ -103,6 +108,56 @@ class _HomePageState extends ConsumerState<HomePage>
         curve: Curves.easeOut,
       );
     }
+  }
+
+  void _seleccionarLugar(LugarPublico lugar) {
+    FocusScope.of(context).unfocus();
+    final destino = Destino(
+      id: lugar.idDestino,
+      nombre: lugar.destino,
+      municipio: lugar.municipio,
+      posicion: lugar.destinoPosicion,
+    );
+    setState(() {
+      _seleccionado = destino;
+      _lugarSeleccionado = lugar;
+    });
+    ref.read(destinoActivoProvider.notifier).seleccionar(destino.id);
+    _moverMapa(lugar.posicion, 16);
+    showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (_) => _LugarSheet(lugar: lugar),
+    );
+  }
+
+  List<LugarPublico> _filtrarLugares(List<LugarPublico> todos) {
+    final q = normalizar(_consulta.trim());
+    if (q.isEmpty) return const <LugarPublico>[];
+    return todos
+        .where(
+          (l) => normalizar(
+            '${l.nombre} ${l.categoria} ${l.destino} ${l.municipio}',
+          ).contains(q),
+        )
+        .toList();
+  }
+
+  Widget _tarjetaLugar(LugarPublico l) {
+    final horario = l.horario?.trim() ?? '';
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: ListTile(
+        leading: Icon(_iconoCategoria(l.categoria)),
+        title: Text(l.nombre),
+        subtitle: Text(
+          '${l.categoria} · ${l.destino}'
+          '${horario.isEmpty ? '' : ' · $horario'}',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => _seleccionarLugar(l),
+      ),
+    );
   }
 
   void _mostrarPerfil() {
@@ -162,6 +217,13 @@ class _HomePageState extends ConsumerState<HomePage>
       orElse: () => const <Destino>[],
     );
 
+    final lugaresAsync = ref.watch(lugaresProvider);
+    final lugares = lugaresAsync.maybeWhen(
+      data: (lista) => lista,
+      orElse: () => const <LugarPublico>[],
+    );
+    final lugaresVisibles = _filtrarLugares(lugares);
+
     return Scaffold(
       drawer: AppDrawer(onPerfil: _mostrarPerfil),
       appBar: AppBar(
@@ -192,91 +254,224 @@ class _HomePageState extends ConsumerState<HomePage>
           ),
         ],
       ),
-      body: ListView(
-        controller: _scrollController,
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
-        children: [
-          TextField(
-            controller: _searchController,
-            textInputAction: TextInputAction.search,
-            onChanged: (v) => setState(() => _consulta = v),
-            decoration: InputDecoration(
-              hintText: 'Buscar destinos (ej. Lorica)',
-              prefixIcon: const Icon(Icons.search),
-              suffixIcon: _consulta.isEmpty
-                  ? null
-                  : IconButton(
-                      tooltip: 'Borrar búsqueda',
-                      icon: const Icon(Icons.close),
-                      onPressed: () {
-                        _searchController.clear();
-                        setState(() => _consulta = '');
-                      },
-                    ),
-              border: OutlineInputBorder(
-                borderRadius: BorderRadius.circular(28),
-              ),
-            ),
-          ),
-          const SizedBox(height: 12),
-          HomeMap(
-            controller: _mapController,
-            destinos: todos,
-            seleccionado: _seleccionado,
-            onSelect: _seleccionar,
-            onMapReady: _alMapaListo,
-            onCentrar: _centrarEnUsuario,
-          ),
-          const SizedBox(height: 20),
-          Text(
-            _consulta.trim().isEmpty ? 'Destinos sugeridos' : 'Resultados',
-            style: Theme.of(context).textTheme.titleMedium,
-          ),
-          const SizedBox(height: 8),
-          destinosAsync.when(
-            skipLoadingOnReload: true,
-            loading: () => const Padding(
-              padding: EdgeInsets.all(24),
-              child: Center(child: CircularProgressIndicator()),
-            ),
-            error: (e, _) => Padding(
-              padding: const EdgeInsets.all(8),
-              child: Text(
-                'No se pudieron cargar los destinos. Revisa tu conexión.\n$e',
-              ),
-            ),
-            data: (lista) {
-              final visibles = _filtrar(lista, ubicacion.posicion);
-              if (visibles.isEmpty) {
-                return Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Text('No encontramos destinos para "$_consulta".'),
-                );
-              }
-              return Column(
-                children: [
-                  for (final d in visibles)
-                    Card(
-                      margin: const EdgeInsets.only(bottom: 8),
-                      child: ListTile(
-                        selected: d.id == _seleccionado?.id,
-                        leading: const Icon(Icons.place_outlined),
-                        title: Text(d.nombre),
-                        subtitle: Text(
-                          ubicacion.posicion == null
-                              ? d.municipio
-                              : '${d.municipio}  ·  a '
-                                    '${formatearDistancia(_distanciaA(d, ubicacion.posicion!))}',
-                        ),
-                        trailing: const Icon(Icons.chevron_right),
-                        onTap: () => _seleccionar(d),
+      body: RefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(destinosProvider);
+          ref.invalidate(lugaresProvider);
+          await Future.wait([
+            ref.read(destinosProvider.future),
+            ref.read(lugaresProvider.future),
+          ]);
+        },
+        child: ListView(
+          controller: _scrollController,
+          padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+          physics: const AlwaysScrollableScrollPhysics(),
+          children: [
+            TextField(
+              controller: _searchController,
+              textInputAction: TextInputAction.search,
+              onChanged: (v) => setState(() => _consulta = v),
+              decoration: InputDecoration(
+                hintText: 'Buscar destinos o lugares (ej. Osaka)',
+                prefixIcon: const Icon(Icons.search),
+                suffixIcon: _consulta.isEmpty
+                    ? null
+                    : IconButton(
+                        tooltip: 'Borrar búsqueda',
+                        icon: const Icon(Icons.close),
+                        onPressed: () {
+                          _searchController.clear();
+                          setState(() => _consulta = '');
+                        },
                       ),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(28),
+                ),
+              ),
+            ),
+            const SizedBox(height: 12),
+            HomeMap(
+              controller: _mapController,
+              destinos: todos,
+              seleccionado: _seleccionado,
+              lugarSeleccionado: _lugarSeleccionado,
+              onSelect: _seleccionar,
+              onMapReady: _alMapaListo,
+              onCentrar: _centrarEnUsuario,
+            ),
+            const SizedBox(height: 20),
+            Text(
+              _consulta.trim().isEmpty ? 'Destinos sugeridos' : 'Resultados',
+              style: Theme.of(context).textTheme.titleMedium,
+            ),
+            const SizedBox(height: 8),
+            if (lugaresAsync.hasError)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  'No se pudieron cargar los lugares.',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
+            if (_consulta.trim().isNotEmpty && lugaresVisibles.isNotEmpty) ...[
+              Text('Lugares', style: Theme.of(context).textTheme.titleSmall),
+              const SizedBox(height: 6),
+              for (final l in lugaresVisibles) _tarjetaLugar(l),
+              const SizedBox(height: 12),
+            ],
+            destinosAsync.when(
+              skipLoadingOnReload: true,
+              loading: () => const Padding(
+                padding: EdgeInsets.all(24),
+                child: Center(child: CircularProgressIndicator()),
+              ),
+              error: (e, _) => Padding(
+                padding: const EdgeInsets.all(8),
+                child: Text(
+                  'No se pudieron cargar los destinos. Revisa tu conexión.\n$e',
+                ),
+              ),
+              data: (lista) {
+                final visibles = _filtrar(lista, ubicacion.posicion);
+                if (visibles.isEmpty) {
+                  if (_consulta.trim().isNotEmpty &&
+                      lugaresVisibles.isNotEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Text(
+                      _consulta.trim().isEmpty
+                          ? 'No hay destinos disponibles.'
+                          : 'No encontramos destinos ni lugares para '
+                                '"$_consulta".',
                     ),
+                  );
+                }
+                return Column(
+                  children: [
+                    if (_consulta.trim().isNotEmpty) ...[
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: Text(
+                          'Destinos',
+                          style: Theme.of(context).textTheme.titleSmall,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                    ],
+                    for (final d in visibles)
+                      Card(
+                        margin: const EdgeInsets.only(bottom: 8),
+                        child: ListTile(
+                          selected: d.id == _seleccionado?.id,
+                          leading: const Icon(Icons.place_outlined),
+                          title: Text(d.nombre),
+                          subtitle: Text(
+                            ubicacion.posicion == null
+                                ? d.municipio
+                                : '${d.municipio}  ·  a '
+                                      '${formatearDistancia(_distanciaA(d, ubicacion.posicion!))}',
+                          ),
+                          trailing: const Icon(Icons.chevron_right),
+                          onTap: () => _seleccionar(d),
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+IconData _iconoCategoria(String categoria) {
+  return switch (normalizar(categoria)) {
+    'restaurante' => Icons.restaurant_outlined,
+    'alojamiento' => Icons.hotel_outlined,
+    'atraccion' => Icons.attractions_outlined,
+    'servicio' => Icons.build_outlined,
+    'transporte' => Icons.directions_bus_outlined,
+    _ => Icons.place_outlined,
+  };
+}
+
+class _LugarSheet extends StatelessWidget {
+  const _LugarSheet({required this.lugar});
+
+  final LugarPublico lugar;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final horario = lugar.horario?.trim() ?? '';
+
+    return SafeArea(
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(24, 0, 24, 24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                CircleAvatar(
+                  backgroundColor: scheme.primaryContainer,
+                  foregroundColor: scheme.onPrimaryContainer,
+                  child: Icon(_iconoCategoria(lugar.categoria)),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        lugar.nombre,
+                        style: Theme.of(context).textTheme.titleLarge,
+                      ),
+                      Text(
+                        '${lugar.categoria} · ${lugar.destino}',
+                        style: TextStyle(color: scheme.outline),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            if (horario.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Icon(Icons.schedule, size: 18),
+                  const SizedBox(width: 8),
+                  Expanded(child: Text(horario)),
                 ],
-              );
-            },
-          ),
-        ],
+              ),
+            ],
+            const SizedBox(height: 16),
+            Text(
+              'El destino ${lugar.destino} quedó activo para el resto de '
+              'los módulos.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.outline),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cerrar'),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

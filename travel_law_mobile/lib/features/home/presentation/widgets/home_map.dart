@@ -6,6 +6,7 @@ import 'package:latlong2/latlong.dart';
 
 import '../../../../core/config/app_constants.dart';
 import '../../../destinos/data/destinos_repository.dart';
+import '../../../lugares/data/lugares_repository.dart';
 import '../../../ubicacion/data/ubicacion_provider.dart';
 
 /// Centro aproximado del departamento de Córdoba (vista inicial del mapa).
@@ -19,6 +20,7 @@ class HomeMap extends ConsumerWidget {
     required this.controller,
     required this.destinos,
     required this.seleccionado,
+    this.lugarSeleccionado,
     required this.onSelect,
     required this.onMapReady,
     required this.onCentrar,
@@ -27,6 +29,7 @@ class HomeMap extends ConsumerWidget {
   final MapController controller;
   final List<Destino> destinos;
   final Destino? seleccionado;
+  final LugarPublico? lugarSeleccionado;
   final ValueChanged<Destino> onSelect;
   final VoidCallback onMapReady;
   final VoidCallback onCentrar;
@@ -77,6 +80,18 @@ class HomeMap extends ConsumerWidget {
                                 ? scheme.error
                                 : scheme.primary,
                           ),
+                        ),
+                      ),
+                    if (lugarSeleccionado != null)
+                      Marker(
+                        point: lugarSeleccionado!.posicion,
+                        width: 44,
+                        height: 44,
+                        alignment: Alignment.topCenter,
+                        child: Icon(
+                          Icons.place,
+                          size: 42,
+                          color: scheme.tertiary,
                         ),
                       ),
                     if (posicionUsuario != null)

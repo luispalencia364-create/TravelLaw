@@ -66,5 +66,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>TravelLaw necesita acceso a tus fotos para adjuntarlas a las publicaciones de la comunidad.</string>
 </dict>
 </plist>

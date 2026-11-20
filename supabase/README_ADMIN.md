@@ -9,7 +9,9 @@ En **Supabase → SQL Editor**, ejecuta en este orden:
 3. `supabase/migrations/20261110000000_alertas_moderacion.sql`
 4. `supabase/migrations/20261111000000_sos_destinos.sql`
 5. `supabase/migrations/20261112000000_moderacion_permisos.sql`
-6. `supabase/seed.sql`
+6. `supabase/migrations/20261113000000_lugares_publicos.sql`
+7. `supabase/migrations/20261114000000_comunidad_social.sql`
+8. `supabase/seed.sql`
 
 El primero crea el rol de **superadministrador**, las funciones para
 crear/gestionar cuentas y las protecciones para que nadie pueda ascenderse
@@ -21,8 +23,11 @@ administrador las verifique. El cuarto garantiza que **todo destino nuevo
 nazca con las líneas nacionales de emergencia** (123, 119, 132 y 144) en el
 módulo SOS y rellena los destinos existentes que no las tengan. El quinto
 limita a los moderadores a **suspender o reactivar cuentas de turista**
-(sin poder eliminarlas ni tocar administradores). El sexto crea el
-administrador de ejemplo.
+(sin poder eliminarlas ni tocar administradores). El sexto expone los
+**lugares activos** (restaurantes, alojamientos, atracciones...) para que
+el buscador de la app los encuentre por nombre, categoría o destino. El
+séptimo convierte la **comunidad de viajeros** en una mini red social con
+me gusta, comentarios y fotos. El octavo crea el administrador de ejemplo.
 
 > Es importante aplicar la migración antes de abrir la app: el perfil del
 > usuario ahora incluye la columna `es_super_admin`.
@@ -127,13 +132,16 @@ pueden participar desde la app:
   estado `pendiente_moderacion`. No aparece en el feed público hasta que el
   staff la verifica.
 - **Comunidad de viajeros → botón "Publicar"**: publica una recomendación
-  en el feed del destino (post-moderación por denuncias, como ya definía el
-  diseño original).
+  con hasta 5 fotos. Cada publicación permite dar **me gusta**, abrir el
+  hilo de **comentarios** y ampliar las fotos. El autor y el staff pueden
+  eliminar publicaciones y comentarios.
 - **Precios y cobros → botón "Reportar cobro"**: envía un reporte de cobro
   abusivo con estado `pendiente_revision`; solo lo ve el autor y el staff.
-- **Buscador de destinos**: en la pantalla de inicio y en el selector de
-  destino de cada módulo se puede escribir el nombre o municipio para
-  filtrar los destinos.
+- **Buscador de destinos y lugares**: en la pantalla de inicio se puede
+  escribir el nombre de un destino, municipio o lugar (por ejemplo
+  "Osaka") para ver coincidencias. En el selector de destino de cada módulo
+  se filtran solo los destinos. Al tocar un lugar se activa su destino y se
+  muestra su categoría y horario.
 
 Para moderar, moderadores y administradores tienen la entrada
 **"Moderación"** en el menú lateral (ruta `/moderacion`). Desde ahí pueden
@@ -147,4 +155,10 @@ La migración 3 (`20261110000000_alertas_moderacion.sql`) refuerza esto en la
 base de datos: solo el autor, el staff y las alertas verificadas son
 visibles para el resto de usuarios. La migración 5
 (`20261112000000_moderacion_permisos.sql`) limita al moderador a ver y
-suspender/reactivar únicamente cuentas de turista.
+suspender/reactivar únicamente cuentas de turista. La migración 6
+(`20261113000000_lugares_publicos.sql`) expone los lugares activos de
+destinos activos mediante `listar_lugares_publicos()`, usando la lectura
+pública de `lugar` y `categoria_lugar`. La migración 7
+(`20261114000000_comunidad_social.sql`) crea `me_gusta` con sus políticas y
+un índice para el hilo de comentarios. Las fotos usan el bucket privado
+`evidencias` y la tabla `evidencia` que ya existían.
