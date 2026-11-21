@@ -60,18 +60,40 @@ class ReporteCobro {
   );
 }
 
+/// Días hacia atrás que se muestran en precios y reportes (0 = todo).
+class DiasPreciosNotifier extends Notifier<int> {
+  @override
+  int build() => 30;
+
+  void cambiar(int dias) => state = dias;
+}
+
+final diasPreciosProvider = NotifierProvider<DiasPreciosNotifier, int>(
+  DiasPreciosNotifier.new,
+);
+
 /// Precios de referencia del destino; los de un lugar traen su nombre.
 final preciosProvider = FutureProvider.autoDispose
     .family<List<PrecioReferencia>, int>((ref, idDestino) async {
-      final data = await ref
+      final dias = ref.watch(diasPreciosProvider);
+      final base = ref
           .watch(supabaseProvider)
           .from('precio_referencia')
           .select(
             'id_precio, servicio, precio_min, precio_max, fuente, '
             'fecha_actualizacion, lugar(nombre)',
           )
-          .eq('id_destino', idDestino)
-          .order('servicio');
+          .eq('id_destino', idDestino);
+      final filtrada = dias > 0
+          ? base.gte(
+              'fecha_actualizacion',
+              DateTime.now()
+                  .subtract(Duration(days: dias))
+                  .toUtc()
+                  .toIso8601String(),
+            )
+          : base;
+      final data = await filtrada.order('servicio');
       return data.map(PrecioReferencia.fromMap).toList();
     });
 
@@ -81,11 +103,21 @@ final misReportesCobroProvider = FutureProvider.autoDispose<List<ReporteCobro>>(
     final client = ref.watch(supabaseProvider);
     final uid = client.auth.currentUser?.id;
     if (uid == null) return const <ReporteCobro>[];
-    final data = await client
+    final dias = ref.watch(diasPreciosProvider);
+    final base = client
         .from('reporte_cobro')
         .select('id_reporte, servicio, precio_pagado, fecha, estado')
-        .eq('id_usuario', uid)
-        .order('fecha', ascending: false);
+        .eq('id_usuario', uid);
+    final filtrada = dias > 0
+        ? base.gte(
+            'fecha',
+            DateTime.now()
+                .subtract(Duration(days: dias))
+                .toUtc()
+                .toIso8601String(),
+          )
+        : base;
+    final data = await filtrada.order('fecha', ascending: false);
     return data.map(ReporteCobro.fromMap).toList();
   },
 );

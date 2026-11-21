@@ -12,6 +12,7 @@ class Perfil {
     required this.idioma,
     required this.estado,
     required this.esSuperAdmin,
+    this.idDestinoActivo,
     this.fechaRegistro,
   });
 
@@ -22,6 +23,7 @@ class Perfil {
   final String idioma;
   final String estado;
   final bool esSuperAdmin;
+  final int? idDestinoActivo;
   final DateTime? fechaRegistro;
 
   factory Perfil.fromMap(Map<String, dynamic> m) {
@@ -36,6 +38,7 @@ class Perfil {
       idioma: (m['idioma'] as String?) ?? 'es',
       estado: (m['estado'] as String?) ?? 'activo',
       esSuperAdmin: (m['es_super_admin'] as bool?) ?? false,
+      idDestinoActivo: (m['id_destino_activo'] as num?)?.toInt(),
       fechaRegistro: parseFecha(m['fecha_registro']),
     );
   }

@@ -11,7 +11,9 @@ En **Supabase → SQL Editor**, ejecuta en este orden:
 5. `supabase/migrations/20261112000000_moderacion_permisos.sql`
 6. `supabase/migrations/20261113000000_lugares_publicos.sql`
 7. `supabase/migrations/20261114000000_comunidad_social.sql`
-8. `supabase/seed.sql`
+8. `supabase/migrations/20261115000000_notificaciones.sql`
+9. `supabase/migrations/20261116000000_moderacion_comunidad.sql`
+10. `supabase/seed.sql`
 
 El primero crea el rol de **superadministrador**, las funciones para
 crear/gestionar cuentas y las protecciones para que nadie pueda ascenderse
@@ -27,7 +29,12 @@ limita a los moderadores a **suspender o reactivar cuentas de turista**
 **lugares activos** (restaurantes, alojamientos, atracciones...) para que
 el buscador de la app los encuentre por nombre, categoría o destino. El
 séptimo convierte la **comunidad de viajeros** en una mini red social con
-me gusta, comentarios y fotos. El octavo crea el administrador de ejemplo.
+me gusta, comentarios y fotos. El octavo agrega las **notificaciones**
+para turistas: guarda el destino activo y la última ubicación, crea la
+tabla `notificacion` con RLS y Realtime, y avisa de alertas de la zona,
+me gusta y comentarios. El noveno añade la **moderación de la comunidad**:
+restringir, eliminar o restaurar publicaciones, con aviso al autor. El
+décimo crea el administrador de ejemplo.
 
 > Es importante aplicar la migración antes de abrir la app: el perfil del
 > usuario ahora incluye la columna `es_super_admin`.
@@ -93,7 +100,7 @@ Desde ahí puedes:
 ## 3.2 Panel de moderación
 
 Moderadores y administradores activos tienen la entrada **"Moderación"** en
-el menú lateral (ruta `/moderacion`). Tiene 4 pestañas:
+el menú lateral (ruta `/moderacion`). Tiene 5 pestañas:
 
 | Pestaña | Qué permite |
 | --- | --- |
@@ -101,6 +108,7 @@ el menú lateral (ruta `/moderacion`). Tiene 4 pestañas:
 | Reportes | Ver los reportes de cobro abusivo de los viajeros y **eliminarlos**. |
 | SOS | Filtrar por destino y **eliminar** contactos de emergencia del módulo SOS. |
 | Turistas | Buscar cuentas de turista y **suspenderlas o reactivarlas**. No permite eliminarlas ni cambiarles el rol, el correo o el nombre. |
+| Comunidad | Ver las publicaciones de la comunidad y **restringirlas** (dejan de ser visibles), **eliminarlas** o **restaurarlas**. El autor recibe una notificación con el motivo. |
 
 Los administradores conservan el acceso completo desde **Gestión de
 contenido** (alertas y contactos SOS) y desde **Panel de administración →
@@ -162,3 +170,13 @@ pública de `lugar` y `categoria_lugar`. La migración 7
 (`20261114000000_comunidad_social.sql`) crea `me_gusta` con sus políticas y
 un índice para el hilo de comentarios. Las fotos usan el bucket privado
 `evidencias` y la tabla `evidencia` que ya existían.
+
+La migración 8 (`20261115000000_notificaciones.sql`) añade la campana de
+**notificaciones** para los viajeros. Guarda el destino activo y la última
+ubicación del usuario, crea la tabla `notificacion` con RLS y Realtime, y
+genera avisos cuando se sube o verifica una alerta de su zona, cuando
+alguien da me gusta a su publicación y cuando alguien la comenta. La
+migración 9 (`20261116000000_moderacion_comunidad.sql`) agrega las columnas
+`motivo_moderacion`/`fecha_moderacion` a `publicacion` y las funciones
+`listar_publicaciones_moderacion()` y `moderar_publicacion()` para
+restringir, eliminar o restaurar publicaciones avisando al autor.

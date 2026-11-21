@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/filtro_dias.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/presentation/destino_selector.dart';
@@ -53,33 +54,46 @@ class AlertasPage extends ConsumerWidget {
                 label: const Text('Reportar alerta'),
               )
             : null,
-        body: ConDestino(
-          builder: (context, destino) => TabBarView(
-            children: [
-              AsyncListView<AlertaItem>(
-                value: ref.watch(alertasDestinoProvider(destino.id)),
-                emptyIcon: Icons.notifications_off_outlined,
-                emptyMessage: 'Sin alertas en ${destino.nombre}',
-                emptyDetail:
-                    'Cuando un moderador verifique un reporte aparecerá aquí.',
-                onRefresh: () async {
-                  ref.invalidate(alertasDestinoProvider(destino.id));
-                  await ref.read(alertasDestinoProvider(destino.id).future);
-                },
-                itemBuilder: (context, a) => _AlertaCard(alerta: a),
+        body: Column(
+          children: [
+            FiltroDias(
+              valor: ref.watch(diasAlertasProvider),
+              onChanged: (v) =>
+                  ref.read(diasAlertasProvider.notifier).cambiar(v),
+            ),
+            Expanded(
+              child: ConDestino(
+                builder: (context, destino) => TabBarView(
+                  children: [
+                    AsyncListView<AlertaItem>(
+                      value: ref.watch(alertasDestinoProvider(destino.id)),
+                      emptyIcon: Icons.notifications_off_outlined,
+                      emptyMessage: 'Sin alertas en ${destino.nombre}',
+                      emptyDetail:
+                          'Cuando un moderador verifique un reporte aparecerá aquí.',
+                      onRefresh: () async {
+                        ref.invalidate(alertasDestinoProvider(destino.id));
+                        await ref.read(
+                          alertasDestinoProvider(destino.id).future,
+                        );
+                      },
+                      itemBuilder: (context, a) => _AlertaCard(alerta: a),
+                    ),
+                    AsyncListView<AlertaItem>(
+                      value: ref.watch(misAlertasProvider),
+                      emptyIcon: Icons.edit_notifications_outlined,
+                      emptyMessage: 'Aún no has creado alertas',
+                      onRefresh: () async {
+                        ref.invalidate(misAlertasProvider);
+                        await ref.read(misAlertasProvider.future);
+                      },
+                      itemBuilder: (context, a) => _AlertaCard(alerta: a),
+                    ),
+                  ],
+                ),
               ),
-              AsyncListView<AlertaItem>(
-                value: ref.watch(misAlertasProvider),
-                emptyIcon: Icons.edit_notifications_outlined,
-                emptyMessage: 'Aún no has creado alertas',
-                onRefresh: () async {
-                  ref.invalidate(misAlertasProvider);
-                  await ref.read(misAlertasProvider.future);
-                },
-                itemBuilder: (context, a) => _AlertaCard(alerta: a),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );

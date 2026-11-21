@@ -29,19 +29,39 @@ class AlertaItem {
 
 const _columnas = 'id_alerta, tipo, descripcion, estado, fecha_evento';
 
-/// Alertas vigentes del destino (últimos 30 días). Solo se muestran las
-/// verificadas: las pendientes quedan ocultas hasta que el staff las active.
+/// Días hacia atrás que se muestran en el módulo de alertas (0 = todo).
+class DiasAlertasNotifier extends Notifier<int> {
+  @override
+  int build() => 30;
+
+  void cambiar(int dias) => state = dias;
+}
+
+final diasAlertasProvider = NotifierProvider<DiasAlertasNotifier, int>(
+  DiasAlertasNotifier.new,
+);
+
+/// Alertas vigentes del destino. Solo se muestran las verificadas: las
+/// pendientes quedan ocultas hasta que el staff las active.
 final alertasDestinoProvider = FutureProvider.autoDispose
     .family<List<AlertaItem>, int>((ref, idDestino) async {
-      final desde = DateTime.now().subtract(const Duration(days: 30));
-      final data = await ref
+      final dias = ref.watch(diasAlertasProvider);
+      final base = ref
           .watch(supabaseProvider)
           .from('alerta')
           .select(_columnas)
           .eq('id_destino', idDestino)
-          .eq('estado', 'verificada')
-          .gte('fecha_evento', desde.toUtc().toIso8601String())
-          .order('fecha_evento', ascending: false);
+          .eq('estado', 'verificada');
+      final filtrada = dias > 0
+          ? base.gte(
+              'fecha_evento',
+              DateTime.now()
+                  .subtract(Duration(days: dias))
+                  .toUtc()
+                  .toIso8601String(),
+            )
+          : base;
+      final data = await filtrada.order('fecha_evento', ascending: false);
       return data.map(AlertaItem.fromMap).toList();
     });
 
@@ -50,11 +70,18 @@ final usuarioAlertasProvider = FutureProvider.autoDispose
     .family<List<AlertaItem>, String?>((ref, uid) async {
       final client = ref.watch(supabaseProvider);
       if (uid == null) return const <AlertaItem>[];
-      final data = await client
-          .from('alerta')
-          .select(_columnas)
-          .eq('id_usuario', uid)
-          .order('fecha_creacion', ascending: false);
+      final dias = ref.watch(diasAlertasProvider);
+      final base = client.from('alerta').select(_columnas).eq('id_usuario', uid);
+      final filtrada = dias > 0
+          ? base.gte(
+              'fecha_evento',
+              DateTime.now()
+                  .subtract(Duration(days: dias))
+                  .toUtc()
+                  .toIso8601String(),
+            )
+          : base;
+      final data = await filtrada.order('fecha_creacion', ascending: false);
       return data.map(AlertaItem.fromMap).toList();
     });
 

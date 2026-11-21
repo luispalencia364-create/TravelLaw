@@ -56,7 +56,7 @@ class AuthRepository {
         .from('usuario')
         .select(
           'id_usuario, nombre, email, idioma, estado, fecha_registro, '
-          'es_super_admin, rol(nombre)',
+          'es_super_admin, id_destino_activo, rol(nombre)',
         )
         .eq('id_usuario', uid)
         .maybeSingle();

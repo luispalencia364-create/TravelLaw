@@ -18,6 +18,7 @@ import '../features/cultura/presentation/cultura_page.dart';
 import '../features/descargas/presentation/descargas_page.dart';
 import '../features/home/presentation/home_page.dart';
 import '../features/legal/presentation/legal_page.dart';
+import '../features/notificaciones/presentation/notificaciones_page.dart';
 import '../features/orientacion/presentation/orientacion_page.dart';
 import '../features/precios/presentation/precios_page.dart';
 import '../features/sos/presentation/sos_page.dart';
@@ -86,6 +87,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: Rutas.comunidad,
         builder: (context, state) => const ComunidadPage(),
+      ),
+      GoRoute(
+        path: Rutas.notificaciones,
+        builder: (context, state) => const NotificacionesPage(),
       ),
       GoRoute(
         path: Rutas.orientacion,

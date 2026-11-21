@@ -7,6 +7,7 @@ class Rutas {
   static const alertas = '/alertas';
   static const precios = '/precios';
   static const comunidad = '/comunidad';
+  static const notificaciones = '/notificaciones';
   static const orientacion = '/orientacion';
   static const descargas = '/descargas';
   static const sos = '/sos';

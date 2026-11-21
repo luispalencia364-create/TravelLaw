@@ -87,7 +87,7 @@ class _CrearPublicacionDialogState
             _fotos.map((f) => f.file).toList(),
           );
       if (!mounted) return;
-      ref.invalidate(publicacionesProvider(widget.destino.id));
+      ref.invalidate(comunidadFeedProvider);
       Navigator.pop(context, true);
     } catch (e) {
       if (mounted) {

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../../app/rutas.dart';
 import '../../../auth/data/auth_repository.dart';
 import '../../../auth/data/perfil_provider.dart';
+import '../../../notificaciones/data/notificaciones_repository.dart';
 
 /// Menú lateral con los módulos de TravelLaw.
 class AppDrawer extends ConsumerWidget {
@@ -22,6 +23,7 @@ class AppDrawer extends ConsumerWidget {
       loading: () => null,
       error: (_, _) => null,
     );
+    final noLeidas = ref.watch(notificacionesNoLeidasProvider);
 
     return Drawer(
       child: ListView(
@@ -39,6 +41,20 @@ class AppDrawer extends ConsumerWidget {
             title: const Text('Inicio y mapa'),
             selected: true,
             onTap: () => Navigator.of(context).pop(),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_outlined),
+            title: const Text('Notificaciones'),
+            trailing: noLeidas > 0
+                ? Badge(
+                    label: Text(noLeidas > 99 ? '99+' : '$noLeidas'),
+                  )
+                : null,
+            onTap: () {
+              final router = GoRouter.of(context);
+              Navigator.of(context).pop();
+              router.push(Rutas.notificaciones);
+            },
           ),
           _modulo(
             context,

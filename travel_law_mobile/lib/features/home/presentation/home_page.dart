@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:go_router/go_router.dart';
 import 'package:latlong2/latlong.dart';
 
+import '../../../app/rutas.dart';
 import '../../../core/utils/text_utils.dart';
+import '../../auth/data/auth_repository.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/data/destinos_repository.dart';
 import '../../lugares/data/lugares_repository.dart';
+import '../../notificaciones/data/notificaciones_repository.dart';
 import '../../ubicacion/data/ubicacion_provider.dart';
 import 'widgets/app_drawer.dart';
 import 'widgets/home_map.dart';
@@ -37,13 +41,80 @@ class _HomePageState extends ConsumerState<HomePage>
   LugarPublico? _lugarSeleccionado;
   String _consulta = '';
 
+  /// Controla cada cuánto se envía la ubicación al servidor para no saturar
+  /// la red con cada actualización del GPS.
+  DateTime? _ultimaSyncUbicacion;
+  LatLng? _ultimaPosicionSync;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _ubicacion = ref.read(ubicacionProvider.notifier);
-    // Pide el permiso y empieza a seguir la ubicación al abrir la pantalla.
-    WidgetsBinding.instance.addPostFrameCallback((_) => _ubicacion.iniciar());
+    // Pide el permiso, empieza a seguir la ubicación y registra el contexto
+    // inicial (destino y/o posición) para las notificaciones.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _ubicacion.iniciar();
+      _sincronizarContexto();
+    });
+  }
+
+  /// Guarda en el servidor el destino activo y la última ubicación conocida.
+  /// Así el viajero recibe alertas de su zona aunque no tenga la app abierta
+  /// en ese momento.
+  Future<void> _sincronizarContexto({int? idDestino, LatLng? posicion}) async {
+    final client = ref.read(supabaseProvider);
+    if (client.auth.currentUser?.id == null) return;
+
+    final destino = idDestino ?? ref.read(destinoEfectivoProvider)?.id;
+    final pos = posicion ?? ref.read(ubicacionProvider).posicion;
+    if (destino == null && pos == null) return;
+
+    try {
+      await client.rpc(
+        'actualizar_mi_contexto',
+        params: {
+          'p_id_destino': ?destino,
+          'p_lat': ?pos?.latitude,
+          'p_lng': ?pos?.longitude,
+        },
+      );
+    } catch (e) {
+      debugPrint('No se pudo sincronizar el contexto del viajero: $e');
+    }
+  }
+
+  /// Envía la ubicación como máximo cada 2 minutos o si el viajero se movió
+  /// más de 500 m desde el último envío.
+  bool _debeSincronizarUbicacion(LatLng posicion) {
+    final ahora = DateTime.now();
+    final ultima = _ultimaSyncUbicacion;
+    final anterior = _ultimaPosicionSync;
+
+    if (ultima == null || anterior == null) {
+      _ultimaSyncUbicacion = ahora;
+      _ultimaPosicionSync = posicion;
+      return true;
+    }
+
+    if (ahora.difference(ultima) >= const Duration(minutes: 2)) {
+      _ultimaSyncUbicacion = ahora;
+      _ultimaPosicionSync = posicion;
+      return true;
+    }
+
+    final metros = Geolocator.distanceBetween(
+      anterior.latitude,
+      anterior.longitude,
+      posicion.latitude,
+      posicion.longitude,
+    );
+    if (metros >= 500) {
+      _ultimaSyncUbicacion = ahora;
+      _ultimaPosicionSync = posicion;
+      return true;
+    }
+    return false;
   }
 
   @override
@@ -207,6 +278,17 @@ class _HomePageState extends ConsumerState<HomePage>
         _centradoEnUsuario = true;
         _moverMapa(posicion, 12);
       }
+      if (posicion != null && _debeSincronizarUbicacion(posicion)) {
+        _sincronizarContexto(posicion: posicion);
+      }
+    });
+
+    // Si el destino efectivo cambia (selección manual o GPS), se guarda en
+    // el servidor para segmentar las notificaciones.
+    ref.listen<Destino?>(destinoEfectivoProvider, (anterior, nuevo) {
+      if (nuevo != null && nuevo.id != anterior?.id) {
+        _sincronizarContexto(idDestino: nuevo.id);
+      }
     });
 
     final perfil = ref.watch(perfilProvider);
@@ -234,9 +316,23 @@ class _HomePageState extends ConsumerState<HomePage>
             overflow: TextOverflow.ellipsis,
           ),
           loading: () => const Text('Hola'),
-          error: (_, __) => const Text('Hola'),
+          error: (_, _) => const Text('Hola'),
         ),
         actions: [
+          Consumer(
+            builder: (context, ref, _) {
+              final noLeidas = ref.watch(notificacionesNoLeidasProvider);
+              return IconButton(
+                tooltip: 'Notificaciones',
+                onPressed: () => context.push(Rutas.notificaciones),
+                icon: Badge(
+                  isLabelVisible: noLeidas > 0,
+                  label: Text(noLeidas > 99 ? '99+' : '$noLeidas'),
+                  child: const Icon(Icons.notifications_outlined),
+                ),
+              );
+            },
+          ),
           perfil.maybeWhen(
             skipLoadingOnReload: true,
             data: (p) => p == null

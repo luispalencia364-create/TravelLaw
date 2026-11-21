@@ -47,6 +47,67 @@ class ReporteModeracion {
   };
 }
 
+/// Publicación de la comunidad vista desde el panel de moderación.
+class PublicacionModeracion {
+  const PublicacionModeracion({
+    required this.id,
+    required this.idDestino,
+    required this.destino,
+    required this.autor,
+    required this.descripcion,
+    required this.estado,
+    required this.fechaCreacion,
+    this.motivoModeracion,
+    this.fechaModeracion,
+    this.meGusta = 0,
+    this.comentarios = 0,
+    this.evidencias = 0,
+  });
+
+  final String id;
+  final int idDestino;
+  final String destino;
+  final String autor;
+  final String descripcion;
+  final String estado;
+  final String? motivoModeracion;
+  final DateTime fechaCreacion;
+  final DateTime? fechaModeracion;
+  final int meGusta;
+  final int comentarios;
+  final int evidencias;
+
+  factory PublicacionModeracion.fromMap(Map<String, dynamic> m) {
+    return PublicacionModeracion(
+      id: m['id_publicacion'] as String,
+      idDestino: m['id_destino'] as int,
+      destino: (m['destino'] as String?) ?? '',
+      autor: (m['autor'] as String?) ?? '',
+      descripcion: (m['descripcion'] as String?) ?? '',
+      estado: (m['estado'] as String?) ?? 'publicada',
+      motivoModeracion: m['motivo_moderacion'] as String?,
+      fechaCreacion: parseFecha(m['fecha_creacion']) ?? DateTime.now(),
+      fechaModeracion: parseFecha(m['fecha_moderacion']),
+      meGusta: (m['me_gusta'] as num?)?.toInt() ?? 0,
+      comentarios: (m['comentarios'] as num?)?.toInt() ?? 0,
+      evidencias: (m['evidencias'] as num?)?.toInt() ?? 0,
+    );
+  }
+
+  String get estadoEtiqueta => switch (estado) {
+    'publicada' => 'Publicada',
+    'oculta' => 'Restringida',
+    'pendiente_moderacion' => 'Pendiente',
+    'rechazada' => 'Rechazada',
+    _ => capitalizar(estado),
+  };
+
+  bool get estaVisible => estado == 'publicada';
+  bool get estaRestringida => estado == 'oculta';
+  bool get puedeRestringirse =>
+      estado == 'publicada' || estado == 'pendiente_moderacion';
+}
+
 /// Operaciones de moderación que no son contenido institucional:
 /// reportes de cobro y cuentas de turistas.
 class ModeracionRepository {
@@ -71,6 +132,36 @@ class ModeracionRepository {
 
   Future<void> eliminarReporte(String id) async {
     await _client.from('reporte_cobro').delete().eq('id_reporte', id);
+  }
+
+  /// Publicaciones de la comunidad (publicadas, restringidas y eliminadas
+  /// ya no aparecen) para que el staff las modere.
+  Future<List<PublicacionModeracion>> listarPublicaciones() async {
+    final data = await _client.rpc('listar_publicaciones_moderacion');
+    return (data as List)
+        .map(
+          (m) => PublicacionModeracion.fromMap(
+            Map<String, dynamic>.from(m as Map),
+          ),
+        )
+        .toList();
+  }
+
+  /// `accion`: 'restringir' | 'eliminar' | 'restaurar'.
+  /// El autor recibe una notificación con el motivo.
+  Future<void> moderarPublicacion({
+    required String id,
+    required String accion,
+    String? motivo,
+  }) async {
+    await _client.rpc(
+      'moderar_publicacion',
+      params: {
+        'p_id_publicacion': id,
+        'p_accion': accion,
+        'p_motivo': motivo,
+      },
+    );
   }
 
   /// Solo devuelve turistas: la política RLS deja ver al moderador
@@ -109,6 +200,11 @@ final moderacionRepositoryProvider = Provider<ModeracionRepository>(
 final reportesModeracionProvider =
     FutureProvider.autoDispose<List<ReporteModeracion>>(
       (ref) => ref.watch(moderacionRepositoryProvider).listarReportes(),
+    );
+
+final publicacionesModeracionProvider =
+    FutureProvider.autoDispose<List<PublicacionModeracion>>(
+      (ref) => ref.watch(moderacionRepositoryProvider).listarPublicaciones(),
     );
 
 final turistasModeracionProvider =

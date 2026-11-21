@@ -3,19 +3,52 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/filtro_dias.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/presentation/destino_selector.dart';
 import '../data/comunidad_repository.dart';
 import 'crear_publicacion_dialog.dart';
 
-class ComunidadPage extends ConsumerWidget {
+class ComunidadPage extends ConsumerStatefulWidget {
   const ComunidadPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<ComunidadPage> createState() => _ComunidadPageState();
+}
+
+class _ComunidadPageState extends ConsumerState<ComunidadPage> {
+  final _scrollController = ScrollController();
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_alDesplazar);
+  }
+
+  @override
+  void dispose() {
+    _scrollController
+      ..removeListener(_alDesplazar)
+      ..dispose();
+    super.dispose();
+  }
+
+  /// Carga la siguiente página cuando el usuario se acerca al final.
+  void _alDesplazar() {
+    if (!_scrollController.hasClients) return;
+    final posicion = _scrollController.position;
+    if (posicion.maxScrollExtent <= 0) return;
+    if (posicion.pixels >= posicion.maxScrollExtent - 320) {
+      ref.read(comunidadFeedProvider.notifier).cargarMas();
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final perfil = ref.watch(perfilProvider).asData?.value;
     final destino = ref.watch(destinoEfectivoProvider);
+    final dias = ref.watch(diasComunidadProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Comunidad de viajeros')),
@@ -42,28 +75,123 @@ class ComunidadPage extends ConsumerWidget {
             )
           : null,
       body: ConDestino(
-        builder: (context, destino) => Consumer(
-          builder: (context, ref, _) => AsyncListView<Publicacion>(
-            value: ref.watch(publicacionesProvider(destino.id)),
-            emptyIcon: Icons.groups_outlined,
-            emptyMessage: 'Sin publicaciones en ${destino.nombre}',
-            emptyDetail:
-                'Aquí verás recomendaciones, fotos y comentarios de otros '
-                'viajeros.',
-            onRefresh: () async {
-              ref.invalidate(publicacionesProvider(destino.id));
-              await ref.read(publicacionesProvider(destino.id).future);
-            },
-            itemBuilder: (context, p) => PublicacionCard(
-              key: ValueKey(p.id),
-              publicacion: p,
-              idDestino: destino.id,
-              perfil: perfil,
+        builder: (context, destino) => Column(
+          children: [
+            FiltroDias(
+              valor: dias,
+              onChanged: (v) =>
+                  ref.read(diasComunidadProvider.notifier).cambiar(v),
             ),
-          ),
+            Expanded(
+              child: Consumer(
+                builder: (context, ref, _) {
+                  final async = ref.watch(comunidadFeedProvider);
+                  return async.when(
+                    skipLoadingOnReload: true,
+                    loading: () =>
+                        const Center(child: CircularProgressIndicator()),
+                    error: (e, _) => RefreshIndicator(
+                      onRefresh: () =>
+                          ref.read(comunidadFeedProvider.notifier).recargar(),
+                      child: ListView(
+                        controller: _scrollController,
+                        physics: const AlwaysScrollableScrollPhysics(),
+                        children: const [
+                          SizedBox(
+                            height: 420,
+                            child: EmptyState(
+                              icon: Icons.cloud_off_outlined,
+                              message: 'No se pudo cargar la comunidad',
+                              detail:
+                                  'Revisa tu conexión y desliza hacia abajo '
+                                  'para reintentar.',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    data: (estado) => RefreshIndicator(
+                      onRefresh: () =>
+                          ref.read(comunidadFeedProvider.notifier).recargar(),
+                      child: estado.publicaciones.isEmpty
+                          ? ListView(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              children: [
+                                SizedBox(
+                                  height: 420,
+                                  child: EmptyState(
+                                    icon: Icons.groups_outlined,
+                                    message:
+                                        'Sin publicaciones en ${destino.nombre}',
+                                    detail:
+                                        'Aquí verás recomendaciones, fotos y '
+                                        'comentarios de otros viajeros.',
+                                  ),
+                                ),
+                              ],
+                            )
+                          : ListView.builder(
+                              controller: _scrollController,
+                              physics: const AlwaysScrollableScrollPhysics(),
+                              padding: const EdgeInsets.fromLTRB(
+                                16,
+                                8,
+                                16,
+                                24,
+                              ),
+                              itemCount: estado.publicaciones.length + 1,
+                              itemBuilder: (context, i) {
+                                if (i == estado.publicaciones.length) {
+                                  return _PieFeed(estado: estado);
+                                }
+                                final p = estado.publicaciones[i];
+                                return PublicacionCard(
+                                  key: ValueKey(p.id),
+                                  publicacion: p,
+                                  perfil: perfil,
+                                );
+                              },
+                            ),
+                    ),
+                  );
+                },
+              ),
+            ),
+          ],
         ),
       ),
     );
+  }
+}
+
+class _PieFeed extends ConsumerWidget {
+  const _PieFeed({required this.estado});
+
+  final ComunidadFeedState estado;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (estado.cargandoMas) {
+      return const Padding(
+        padding: EdgeInsets.all(16),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (estado.hayMas) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Center(
+          child: TextButton.icon(
+            onPressed: () =>
+                ref.read(comunidadFeedProvider.notifier).cargarMas(),
+            icon: const Icon(Icons.expand_more),
+            label: const Text('Cargar más'),
+          ),
+        ),
+      );
+    }
+    return const SizedBox.shrink();
   }
 }
 
@@ -72,12 +200,10 @@ class PublicacionCard extends ConsumerStatefulWidget {
   const PublicacionCard({
     super.key,
     required this.publicacion,
-    required this.idDestino,
     required this.perfil,
   });
 
   final Publicacion publicacion;
-  final int idDestino;
   final Perfil? perfil;
 
   @override
@@ -101,7 +227,9 @@ class _PublicacionCardState extends ConsumerState<PublicacionCard> {
       await ref
           .read(comunidadRepositoryProvider)
           .alternarMeGusta(_p.id, !_p.yoDoyMeGusta);
-      ref.invalidate(publicacionesProvider(widget.idDestino));
+      await ref
+          .read(comunidadFeedProvider.notifier)
+          .refrescarPublicacion(_p.id);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -125,7 +253,7 @@ class _PublicacionCardState extends ConsumerState<PublicacionCard> {
         ),
         child: FractionallySizedBox(
           heightFactor: 0.8,
-          child: ComentariosSheet(publicacion: _p, idDestino: widget.idDestino),
+          child: ComentariosSheet(publicacion: _p),
         ),
       ),
     );
@@ -156,7 +284,7 @@ class _PublicacionCardState extends ConsumerState<PublicacionCard> {
 
     try {
       await ref.read(comunidadRepositoryProvider).eliminarPublicacion(_p);
-      ref.invalidate(publicacionesProvider(widget.idDestino));
+      ref.read(comunidadFeedProvider.notifier).quitarPublicacion(_p.id);
       if (mounted) {
         ScaffoldMessenger.of(
           context,
@@ -394,14 +522,9 @@ void _verFoto(BuildContext context, String url) {
 
 /// Hoja con el hilo completo de comentarios y el campo para responder.
 class ComentariosSheet extends ConsumerStatefulWidget {
-  const ComentariosSheet({
-    super.key,
-    required this.publicacion,
-    required this.idDestino,
-  });
+  const ComentariosSheet({super.key, required this.publicacion});
 
   final Publicacion publicacion;
-  final int idDestino;
 
   @override
   ConsumerState<ComentariosSheet> createState() => _ComentariosSheetState();
@@ -436,13 +559,9 @@ class _ComentariosSheetState extends ConsumerState<ComentariosSheet> {
           .read(comunidadRepositoryProvider)
           .agregarComentario(widget.publicacion.id, texto);
       _texto.clear();
-      ref.invalidate(publicacionesProvider(widget.idDestino));
-      try {
-        await ref.read(publicacionesProvider(widget.idDestino).future);
-      } catch (_) {
-        // El comentario ya se guardó; si falla la recarga, se verá al
-        // actualizar el feed.
-      }
+      await ref
+          .read(comunidadFeedProvider.notifier)
+          .refrescarPublicacion(widget.publicacion.id);
       if (_scroll.hasClients) {
         _scroll.animateTo(
           _scroll.position.maxScrollExtent,
@@ -486,7 +605,9 @@ class _ComentariosSheetState extends ConsumerState<ComentariosSheet> {
       await ref
           .read(comunidadRepositoryProvider)
           .eliminarComentario(comentario.id);
-      ref.invalidate(publicacionesProvider(widget.idDestino));
+      await ref
+          .read(comunidadFeedProvider.notifier)
+          .refrescarPublicacion(widget.publicacion.id);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -502,12 +623,8 @@ class _ComentariosSheetState extends ConsumerState<ComentariosSheet> {
     final scheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
     final perfil = ref.watch(perfilProvider).asData?.value;
-    final publicacion = ref
-        .watch(publicacionesProvider(widget.idDestino))
-        .maybeWhen(
-          data: (lista) => _actual(lista),
-          orElse: () => widget.publicacion,
-        );
+    final estado = ref.watch(comunidadFeedProvider).asData?.value;
+    final publicacion = _actual(estado?.publicaciones);
     final comentarios = publicacion.comentarios;
     final esStaff =
         perfil?.esAdministrador == true || perfil?.esModerador == true;

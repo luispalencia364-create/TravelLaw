@@ -8,6 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../destinos/data/destino_activo_provider.dart';
 
 /// Foto asociada a una publicación de la comunidad.
 class EvidenciaPublicacion {
@@ -64,26 +65,77 @@ class Publicacion {
   final List<EvidenciaPublicacion> evidencias;
 }
 
+/// Una página del feed y si quedan publicaciones más antiguas por cargar.
+class PaginaPublicaciones {
+  const PaginaPublicaciones({required this.items, required this.hayMas});
+
+  final List<Publicacion> items;
+  final bool hayMas;
+}
+
 /// Acceso a la comunidad: publicaciones, likes, comentarios y fotos.
 class ComunidadRepository {
   ComunidadRepository(this._client);
 
   final SupabaseClient _client;
 
-  Future<List<Publicacion>> listarPublicaciones(int idDestino) async {
+  Future<PaginaPublicaciones> listarPublicaciones(
+    int idDestino, {
+    int dias = 30,
+    int limite = 10,
+    int offset = 0,
+  }) async {
     final uid = _client.auth.currentUser?.id;
-
-    final data = await _client
+    final base = _client
         .from('publicacion')
         .select('id_publicacion, id_usuario, descripcion, fecha_creacion')
         .eq('id_destino', idDestino)
-        .eq('estado', 'publicada')
+        .eq('estado', 'publicada');
+    final filtrada = dias > 0
+        ? base.gte(
+            'fecha_creacion',
+            DateTime.now()
+                .subtract(Duration(days: dias))
+                .toUtc()
+                .toIso8601String(),
+          )
+        : base;
+
+    // Se pide una fila extra para saber si quedan más páginas.
+    final data = await filtrada
         .order('fecha_creacion', ascending: false)
-        .limit(50);
+        .range(offset, offset + limite);
 
-    if (data.isEmpty) return const <Publicacion>[];
+    final hayMas = data.length > limite;
+    final filas = hayMas ? data.take(limite).toList() : data;
+    if (filas.isEmpty) {
+      return const PaginaPublicaciones(items: [], hayMas: false);
+    }
 
-    final ids = data.map((m) => m['id_publicacion'] as String).toList();
+    final items = await _construirPublicaciones(filas, uid);
+    return PaginaPublicaciones(items: items, hayMas: hayMas);
+  }
+
+  /// Recarga una sola publicación para reflejar likes o comentarios sin
+  /// perder las páginas que el usuario ya cargó.
+  Future<Publicacion?> obtenerPublicacion(String id) async {
+    final uid = _client.auth.currentUser?.id;
+    final data = await _client
+        .from('publicacion')
+        .select('id_publicacion, id_usuario, descripcion, fecha_creacion')
+        .eq('id_publicacion', id)
+        .eq('estado', 'publicada')
+        .maybeSingle();
+    if (data == null) return null;
+    final items = await _construirPublicaciones([data], uid);
+    return items.isEmpty ? null : items.first;
+  }
+
+  Future<List<Publicacion>> _construirPublicaciones(
+    List<Map<String, dynamic>> filas,
+    String? uid,
+  ) async {
+    final ids = filas.map((m) => m['id_publicacion'] as String).toList();
 
     final meGustas = await _client
         .from('me_gusta')
@@ -103,7 +155,7 @@ class ComunidadRepository {
         .order('id_evidencia', ascending: true);
 
     final idsUsuarios = <String>{
-      ...data.map((m) => m['id_usuario'] as String),
+      ...filas.map((m) => m['id_usuario'] as String),
       ...comentarios.map((m) => m['id_usuario'] as String),
     };
     final nombres = await _nombres(idsUsuarios.toList());
@@ -148,7 +200,7 @@ class ComunidadRepository {
           );
     }
 
-    return data.map((m) {
+    return filas.map((m) {
       final id = m['id_publicacion'] as String;
       return Publicacion(
         id: id,
@@ -394,11 +446,155 @@ final comunidadRepositoryProvider = Provider<ComunidadRepository>((ref) {
   return ComunidadRepository(ref.watch(supabaseProvider));
 });
 
+/// Días hacia atrás que se muestran en el feed (0 = todo).
+class DiasComunidadNotifier extends Notifier<int> {
+  @override
+  int build() => 30;
+
+  void cambiar(int dias) => state = dias;
+}
+
+final diasComunidadProvider = NotifierProvider<DiasComunidadNotifier, int>(
+  DiasComunidadNotifier.new,
+);
+
+/// Estado del feed paginado: publicaciones cargadas, si hay más y si se
+/// está pidiendo la siguiente página.
+class ComunidadFeedState {
+  const ComunidadFeedState({
+    required this.publicaciones,
+    required this.hayMas,
+    this.cargandoMas = false,
+  });
+
+  final List<Publicacion> publicaciones;
+  final bool hayMas;
+  final bool cargandoMas;
+
+  ComunidadFeedState copyWith({
+    List<Publicacion>? publicaciones,
+    bool? hayMas,
+    bool? cargandoMas,
+  }) {
+    return ComunidadFeedState(
+      publicaciones: publicaciones ?? this.publicaciones,
+      hayMas: hayMas ?? this.hayMas,
+      cargandoMas: cargandoMas ?? this.cargandoMas,
+    );
+  }
+}
+
 /// Feed del destino: publicaciones visibles, de la más reciente a la más
-/// antigua, con sus likes, comentarios y fotos.
-final publicacionesProvider = FutureProvider.autoDispose
-    .family<List<Publicacion>, int>((ref, idDestino) {
-      return ref
-          .watch(comunidadRepositoryProvider)
-          .listarPublicaciones(idDestino);
-    });
+/// antigua, con paginación y filtro por días.
+class ComunidadFeedNotifier extends AsyncNotifier<ComunidadFeedState> {
+  static const _tamanoPagina = 10;
+
+  @override
+  Future<ComunidadFeedState> build() async {
+    final destino = ref.watch(destinoEfectivoProvider);
+    final dias = ref.watch(diasComunidadProvider);
+    if (destino == null) {
+      return const ComunidadFeedState(publicaciones: [], hayMas: false);
+    }
+
+    final pagina = await ref
+        .watch(comunidadRepositoryProvider)
+        .listarPublicaciones(
+          destino.id,
+          dias: dias,
+          limite: _tamanoPagina,
+        );
+    return ComunidadFeedState(
+      publicaciones: pagina.items,
+      hayMas: pagina.hayMas,
+    );
+  }
+
+  /// Vuelve a cargar desde la primera página (pull to refresh o cambio de
+  /// destino/filtro).
+  Future<void> recargar() async {
+    ref.invalidateSelf();
+    await future;
+  }
+
+  /// Carga la siguiente página sin perder las anteriores.
+  Future<void> cargarMas() async {
+    final actual = state.asData?.value;
+    if (actual == null || !actual.hayMas || actual.cargandoMas) return;
+
+    final destino = ref.read(destinoEfectivoProvider);
+    if (destino == null) return;
+
+    state = AsyncData(actual.copyWith(cargandoMas: true));
+    try {
+      final pagina = await ref
+          .read(comunidadRepositoryProvider)
+          .listarPublicaciones(
+            destino.id,
+            dias: ref.read(diasComunidadProvider),
+            limite: _tamanoPagina,
+            offset: actual.publicaciones.length,
+          );
+      final vigente = state.asData?.value ?? actual;
+      state = AsyncData(
+        vigente.copyWith(
+          publicaciones: [...vigente.publicaciones, ...pagina.items],
+          hayMas: pagina.hayMas,
+          cargandoMas: false,
+        ),
+      );
+    } catch (e) {
+      debugPrint('No se pudo cargar más publicaciones: $e');
+      state = AsyncData(actual.copyWith(cargandoMas: false));
+    }
+  }
+
+  /// Refresca una publicación puntual tras un like o un comentario. Si ya
+  /// no es visible (restringida o eliminada), se quita del feed.
+  Future<void> refrescarPublicacion(String id) async {
+    final actual = state.asData?.value;
+    if (actual == null) return;
+
+    final publicacion = await ref
+        .read(comunidadRepositoryProvider)
+        .obtenerPublicacion(id);
+    final vigente = state.asData?.value ?? actual;
+    if (publicacion == null) {
+      state = AsyncData(
+        vigente.copyWith(
+          publicaciones: vigente.publicaciones
+              .where((p) => p.id != id)
+              .toList(),
+        ),
+      );
+      return;
+    }
+
+    state = AsyncData(
+      vigente.copyWith(
+        publicaciones: [
+          for (final p in vigente.publicaciones)
+            if (p.id == id) publicacion else p,
+        ],
+      ),
+    );
+  }
+
+  void quitarPublicacion(String id) {
+    final actual = state.asData?.value;
+    if (actual == null) return;
+    state = AsyncData(
+      actual.copyWith(
+        publicaciones: actual.publicaciones
+            .where((p) => p.id != id)
+            .toList(),
+      ),
+    );
+  }
+}
+
+final comunidadFeedProvider =
+    AsyncNotifierProvider.autoDispose<
+      ComunidadFeedNotifier,
+      ComunidadFeedState
+    >(ComunidadFeedNotifier.new);

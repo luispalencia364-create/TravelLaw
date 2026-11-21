@@ -5,6 +5,7 @@ import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
 import '../../alertas/data/alertas_repository.dart';
 import '../../auth/data/perfil_provider.dart';
+import '../../comunidad/data/comunidad_repository.dart';
 import '../data/admin_repository.dart';
 import '../data/contenido_repository.dart';
 import '../data/moderacion_repository.dart';
@@ -15,6 +16,7 @@ import '../data/moderacion_repository.dart';
 ///   * Verificar, rechazar y eliminar alertas de viajeros.
 ///   * Eliminar reportes de cobro abusivo.
 ///   * Eliminar contactos de emergencia del módulo SOS.
+///   * Restringir, eliminar o restaurar publicaciones de la comunidad.
 ///   * Suspender o reactivar cuentas de turista (nunca eliminarlas).
 class ModeracionPage extends ConsumerWidget {
   const ModeracionPage({super.key});
@@ -68,7 +70,7 @@ class _PanelModeracion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 5,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Moderación'),
@@ -79,6 +81,7 @@ class _PanelModeracion extends StatelessWidget {
               Tab(icon: Icon(Icons.request_quote_outlined), text: 'Reportes'),
               Tab(icon: Icon(Icons.sos_outlined), text: 'SOS'),
               Tab(icon: Icon(Icons.people_outline), text: 'Turistas'),
+              Tab(icon: Icon(Icons.forum_outlined), text: 'Comunidad'),
             ],
           ),
         ),
@@ -88,6 +91,7 @@ class _PanelModeracion extends StatelessWidget {
             _ReportesTab(),
             _SosTab(),
             _TuristasTab(),
+            _ComunidadTab(),
           ],
         ),
       ),
@@ -748,6 +752,287 @@ class _TuristasTabState extends ConsumerState<_TuristasTab> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Pestaña: comunidad de viajeros
+// ─────────────────────────────────────────────────────────────
+
+Color _colorPublicacion(String estado, ColorScheme scheme) => switch (estado) {
+  'publicada' => scheme.primary,
+  'oculta' => scheme.error,
+  'pendiente_moderacion' => scheme.secondary,
+  _ => scheme.outline,
+};
+
+class _ComunidadTab extends ConsumerStatefulWidget {
+  const _ComunidadTab();
+
+  @override
+  ConsumerState<_ComunidadTab> createState() => _ComunidadTabState();
+}
+
+class _ComunidadTabState extends ConsumerState<_ComunidadTab> {
+  final Set<String> _ocupados = {};
+
+  Future<String?> _pedirMotivo(
+    PublicacionModeracion p,
+    String accion,
+  ) async {
+    var motivo = 'Normas de convivencia';
+    final detalle = TextEditingController();
+    final resultado = await showDialog<String>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setStateDialog) => AlertDialog(
+          title: Text(
+            accion == 'restringir'
+                ? 'Restringir publicación'
+                : 'Eliminar publicación',
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  accion == 'restringir'
+                      ? 'La publicación dejará de ser visible en la '
+                            'comunidad. El autor recibirá una notificación '
+                            'con el motivo.'
+                      : 'La publicación y sus fotos se eliminarán de forma '
+                            'permanente. El autor recibirá una notificación '
+                            'con el motivo.',
+                ),
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    ChoiceChip(
+                      label: const Text('Normas de convivencia'),
+                      selected: motivo == 'Normas de convivencia',
+                      onSelected: (_) => setStateDialog(
+                        () => motivo = 'Normas de convivencia',
+                      ),
+                    ),
+                    ChoiceChip(
+                      label: const Text('Uso indebido de la app'),
+                      selected: motivo == 'Uso indebido de la app',
+                      onSelected: (_) => setStateDialog(
+                        () => motivo = 'Uso indebido de la app',
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: detalle,
+                  maxLines: 2,
+                  maxLength: 200,
+                  decoration: const InputDecoration(
+                    labelText: 'Detalle adicional (opcional)',
+                    border: OutlineInputBorder(),
+                    isDense: true,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancelar'),
+            ),
+            FilledButton(
+              style: accion == 'eliminar'
+                  ? FilledButton.styleFrom(
+                      backgroundColor: Theme.of(context).colorScheme.error,
+                    )
+                  : null,
+              onPressed: () {
+                final texto = [
+                  motivo,
+                  detalle.text.trim(),
+                ].where((e) => e.isNotEmpty).join(': ');
+                Navigator.pop(context, texto);
+              },
+              child: Text(accion == 'restringir' ? 'Restringir' : 'Eliminar'),
+            ),
+          ],
+        ),
+      ),
+    );
+    detalle.dispose();
+    return resultado;
+  }
+
+  Future<void> _ejecutar(
+    PublicacionModeracion p,
+    String accion,
+    String? motivo,
+  ) async {
+    setState(() => _ocupados.add(p.id));
+    try {
+      await ref
+          .read(moderacionRepositoryProvider)
+          .moderarPublicacion(id: p.id, accion: accion, motivo: motivo);
+      ref.invalidate(publicacionesModeracionProvider);
+      ref.invalidate(comunidadFeedProvider);
+      if (!mounted) return;
+      _mensaje(
+        context,
+        switch (accion) {
+          'restringir' =>
+            'Publicación restringida. El autor recibió una notificación.',
+          'eliminar' =>
+            'Publicación eliminada. El autor recibió una notificación.',
+          _ => 'Publicación restaurada. El autor recibió una notificación.',
+        },
+      );
+    } on Exception catch (e) {
+      if (mounted) _mensaje(context, mensajeErrorContenido(e));
+    } finally {
+      if (mounted) setState(() => _ocupados.remove(p.id));
+    }
+  }
+
+  Future<void> _restringir(PublicacionModeracion p) async {
+    final motivo = await _pedirMotivo(p, 'restringir');
+    if (motivo == null || !mounted) return;
+    await _ejecutar(p, 'restringir', motivo);
+  }
+
+  Future<void> _eliminar(PublicacionModeracion p) async {
+    final motivo = await _pedirMotivo(p, 'eliminar');
+    if (motivo == null || !mounted) return;
+    await _ejecutar(p, 'eliminar', motivo);
+  }
+
+  Future<void> _restaurar(PublicacionModeracion p) async {
+    final ok = await _confirmar(
+      context,
+      titulo: 'Restaurar publicación',
+      mensaje:
+          '¿Restaurar la publicación de ${p.autor}? Volverá a ser visible '
+          'en la comunidad y el autor recibirá una notificación.',
+      accion: 'Restaurar',
+    );
+    if (!ok || !mounted) return;
+    await _ejecutar(p, 'restaurar', null);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(publicacionesModeracionProvider);
+    final scheme = Theme.of(context).colorScheme;
+
+    return AsyncListView<PublicacionModeracion>(
+      value: async,
+      emptyIcon: Icons.forum_outlined,
+      emptyMessage: 'Sin publicaciones',
+      emptyDetail:
+          'Las publicaciones de la comunidad aparecerán aquí para que '
+          'puedas restringirlas o eliminarlas.',
+      onRefresh: () async {
+        ref.invalidate(publicacionesModeracionProvider);
+        await ref.read(publicacionesModeracionProvider.future);
+      },
+      itemBuilder: (context, p) => Card(
+        margin: const EdgeInsets.only(bottom: 12),
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  CircleAvatar(
+                    radius: 16,
+                    child: Text(
+                      p.autor.isEmpty ? '?' : p.autor[0].toUpperCase(),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      '${p.autor} · ${p.destino}',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                  _ChipEstado(
+                    texto: p.estadoEtiqueta,
+                    color: _colorPublicacion(p.estado, scheme),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Text(
+                p.descripcion,
+                maxLines: 4,
+                overflow: TextOverflow.ellipsis,
+              ),
+              const SizedBox(height: 6),
+              Text(
+                '${fechaRelativa(p.fechaCreacion)} · '
+                '${p.meGusta} me gusta · ${p.comentarios} comentarios · '
+                '${p.evidencias} fotos',
+                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                  color: scheme.outline,
+                ),
+              ),
+              if (p.motivoModeracion != null &&
+                  p.motivoModeracion!.isNotEmpty) ...[
+                const SizedBox(height: 6),
+                Text(
+                  'Motivo: ${p.motivoModeracion}',
+                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: scheme.error,
+                  ),
+                ),
+              ],
+              const SizedBox(height: 10),
+              if (_ocupados.contains(p.id))
+                const Center(
+                  child: SizedBox(
+                    width: 22,
+                    height: 22,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    if (p.puedeRestringirse)
+                      OutlinedButton.icon(
+                        onPressed: () => _restringir(p),
+                        icon: const Icon(Icons.visibility_off_outlined),
+                        label: const Text('Restringir'),
+                      ),
+                    if (p.estaRestringida)
+                      OutlinedButton.icon(
+                        onPressed: () => _restaurar(p),
+                        icon: const Icon(Icons.restore),
+                        label: const Text('Restaurar'),
+                      ),
+                    TextButton.icon(
+                      onPressed: () => _eliminar(p),
+                      icon: Icon(Icons.delete_outline, color: scheme.error),
+                      label: Text(
+                        'Eliminar',
+                        style: TextStyle(color: scheme.error),
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

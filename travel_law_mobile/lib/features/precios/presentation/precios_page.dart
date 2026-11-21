@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../../core/widgets/empty_state.dart';
+import '../../../core/widgets/filtro_dias.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destino_activo_provider.dart';
 import '../../destinos/presentation/destino_selector.dart';
@@ -51,76 +52,92 @@ class PreciosPage extends ConsumerWidget {
                 label: const Text('Reportar cobro'),
               )
             : null,
-        body: ConDestino(
-          builder: (context, destino) => TabBarView(
-            children: [
-              Consumer(
-                builder: (context, ref, _) => AsyncListView<PrecioReferencia>(
-                  value: ref.watch(preciosProvider(destino.id)),
-                  emptyIcon: Icons.request_quote_outlined,
-                  emptyMessage:
-                      'Sin precios de referencia en ${destino.nombre}',
-                  onRefresh: () async {
-                    ref.invalidate(preciosProvider(destino.id));
-                    await ref.read(preciosProvider(destino.id).future);
-                  },
-                  itemBuilder: (context, p) => Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: const Icon(Icons.sell_outlined),
-                      title: Text(p.servicio),
-                      subtitle: Text(
-                        [
-                          if (p.lugar != null) p.lugar!,
-                          'Actualizado ${formatearFecha(p.fechaActualizacion)}',
-                          if (p.fuente != null && p.fuente!.isNotEmpty)
-                            'Fuente: ${p.fuente}',
-                        ].join('\n'),
-                      ),
-                      isThreeLine: p.lugar != null,
-                      trailing: Text(
-                        '${formatearPesos(p.minimo)}\n- ${formatearPesos(p.maximo)}',
-                        textAlign: TextAlign.right,
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
+        body: Column(
+          children: [
+            FiltroDias(
+              valor: ref.watch(diasPreciosProvider),
+              onChanged: (v) =>
+                  ref.read(diasPreciosProvider.notifier).cambiar(v),
+            ),
+            Expanded(
+              child: ConDestino(
+                builder: (context, destino) => TabBarView(
+                  children: [
+                    Consumer(
+                      builder: (context, ref, _) =>
+                          AsyncListView<PrecioReferencia>(
+                            value: ref.watch(preciosProvider(destino.id)),
+                            emptyIcon: Icons.request_quote_outlined,
+                            emptyMessage:
+                                'Sin precios de referencia en ${destino.nombre}',
+                            onRefresh: () async {
+                              ref.invalidate(preciosProvider(destino.id));
+                              await ref.read(preciosProvider(destino.id).future);
+                            },
+                            itemBuilder: (context, p) => Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: const Icon(Icons.sell_outlined),
+                                title: Text(p.servicio),
+                                subtitle: Text(
+                                  [
+                                    if (p.lugar != null) p.lugar!,
+                                    'Actualizado ${formatearFecha(p.fechaActualizacion)}',
+                                    if (p.fuente != null &&
+                                        p.fuente!.isNotEmpty)
+                                      'Fuente: ${p.fuente}',
+                                  ].join('\n'),
+                                ),
+                                isThreeLine: p.lugar != null,
+                                trailing: Text(
+                                  '${formatearPesos(p.minimo)}\n- ${formatearPesos(p.maximo)}',
+                                  textAlign: TextAlign.right,
+                                  style: Theme.of(context).textTheme.labelLarge,
+                                ),
+                              ),
+                            ),
+                          ),
                     ),
-                  ),
+                    Consumer(
+                      builder: (context, ref, _) =>
+                          AsyncListView<ReporteCobro>(
+                            value: ref.watch(misReportesCobroProvider),
+                            emptyIcon: Icons.receipt_long_outlined,
+                            emptyMessage: 'Aún no has reportado cobros',
+                            emptyDetail:
+                                'Usa el botón "Reportar cobro" si te cobraron de más.',
+                            onRefresh: () async {
+                              ref.invalidate(misReportesCobroProvider);
+                              await ref.read(misReportesCobroProvider.future);
+                            },
+                            itemBuilder: (context, r) => Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: const Icon(
+                                  Icons.report_gmailerrorred_outlined,
+                                ),
+                                title: Text(r.servicio),
+                                subtitle: Text(
+                                  'Pagaste ${formatearPesos(r.precioPagado)}  ·  '
+                                  '${formatearFecha(r.fecha)}',
+                                ),
+                                trailing: Chip(
+                                  label: Text(switch (r.estado) {
+                                    'revisado' => 'Revisado',
+                                    'rechazado' => 'Rechazado',
+                                    _ => 'En revisión',
+                                  }),
+                                  visualDensity: VisualDensity.compact,
+                                ),
+                              ),
+                            ),
+                          ),
+                    ),
+                  ],
                 ),
               ),
-              Consumer(
-                builder: (context, ref, _) => AsyncListView<ReporteCobro>(
-                  value: ref.watch(misReportesCobroProvider),
-                  emptyIcon: Icons.receipt_long_outlined,
-                  emptyMessage: 'Aún no has reportado cobros',
-                  emptyDetail:
-                      'Usa el botón "Reportar cobro" si te cobraron de más.',
-                  onRefresh: () async {
-                    ref.invalidate(misReportesCobroProvider);
-                    await ref.read(misReportesCobroProvider.future);
-                  },
-                  itemBuilder: (context, r) => Card(
-                    margin: const EdgeInsets.only(bottom: 8),
-                    child: ListTile(
-                      leading: const Icon(Icons.report_gmailerrorred_outlined),
-                      title: Text(r.servicio),
-                      subtitle: Text(
-                        'Pagaste ${formatearPesos(r.precioPagado)}  ·  '
-                        '${formatearFecha(r.fecha)}',
-                      ),
-                      trailing: Chip(
-                        label: Text(switch (r.estado) {
-                          'revisado' => 'Revisado',
-                          'rechazado' => 'Rechazado',
-                          _ => 'En revisión',
-                        }),
-                        visualDensity: VisualDensity.compact,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
+            ),
+          ],
         ),
       ),
     );
