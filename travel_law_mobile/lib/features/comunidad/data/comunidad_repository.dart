@@ -3,7 +3,6 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image/image.dart' as img;
-import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 import '../../../core/utils/text_utils.dart';
@@ -315,7 +314,7 @@ class ComunidadRepository {
   Future<void> crearPublicacion(
     int idDestino,
     String descripcion,
-    List<XFile> fotos,
+    List<Uint8List> fotos,
   ) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) throw StateError('Sesión no disponible');
@@ -367,9 +366,14 @@ class ComunidadRepository {
     }
   }
 
-  Future<String> _subirFoto(String uid, XFile foto) async {
-    final original = await foto.readAsBytes();
-    final bytes = await compute(_comprimirImagen, original);
+  Future<String> _subirFoto(String uid, Uint8List original) async {
+    Uint8List bytes;
+    try {
+      bytes = _comprimirImagen(original);
+    } catch (e) {
+      debugPrint('No se pudo comprimir la foto, se sube original: $e');
+      bytes = original;
+    }
     final extension = _extensionDesdeBytes(bytes);
     final path = '$uid/${_nombreAleatorio()}.$extension';
 

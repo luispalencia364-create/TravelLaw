@@ -84,7 +84,7 @@ class _CrearPublicacionDialogState
           .crearPublicacion(
             widget.destino.id,
             _descripcion.text.trim(),
-            _fotos.map((f) => f.file).toList(),
+            _fotos.map((f) => f.bytes).toList(),
           );
       if (!mounted) return;
       ref.invalidate(comunidadFeedProvider);
@@ -93,8 +93,7 @@ class _CrearPublicacionDialogState
       if (mounted) {
         setState(() {
           _error =
-              'No se pudo publicar. Verifica tu conexión e inténtalo de '
-              'nuevo.';
+              'No se pudo publicar: $e';
         });
       }
       debugPrint('Error al crear publicación: $e');
@@ -158,18 +157,21 @@ class _CrearPublicacionDialogState
               ),
               if (_fotos.isNotEmpty) ...[
                 const SizedBox(height: 4),
-                SizedBox(
-                  height: 92,
-                  child: ListView.separated(
-                    scrollDirection: Axis.horizontal,
-                    itemCount: _fotos.length,
-                    separatorBuilder: (_, _) => const SizedBox(width: 8),
-                    itemBuilder: (context, i) => _MiniaturaFoto(
-                      foto: _fotos[i],
-                      habilitado: !_guardando,
-                      onRemove: () => _quitarFoto(i),
-                    ),
-                  ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = 0; i < _fotos.length; i++)
+                      SizedBox(
+                        width: 92,
+                        height: 92,
+                        child: _MiniaturaFoto(
+                          foto: _fotos[i],
+                          habilitado: !_guardando,
+                          onRemove: () => _quitarFoto(i),
+                        ),
+                      ),
+                  ],
                 ),
               ],
               const SizedBox(height: 4),
