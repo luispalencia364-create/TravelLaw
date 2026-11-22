@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/utils/text_utils.dart';
 import '../../auth/data/auth_repository.dart';
+import '../../auth/data/perfil_provider.dart';
 import '../../destinos/data/destinos_repository.dart';
 import '../data/alertas_repository.dart';
 
@@ -82,7 +83,10 @@ class _CrearAlertaDialogState extends ConsumerState<CrearAlertaDialog> {
         'ubicacion':
             'POINT(${widget.destino.posicion.longitude} '
             '${widget.destino.posicion.latitude})',
-        'estado': 'pendiente_moderacion',
+        'estado': (ref.read(perfilProvider).asData?.value?.esModerador == true ||
+            ref.read(perfilProvider).asData?.value?.esAdministrador == true)
+            ? 'verificada'
+            : 'pendiente_moderacion',
       });
       if (!mounted) return;
       ref.invalidate(misAlertasProvider);
