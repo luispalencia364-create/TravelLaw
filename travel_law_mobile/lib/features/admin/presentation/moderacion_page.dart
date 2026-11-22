@@ -83,6 +83,7 @@ class _PanelModeracion extends StatelessWidget {
               Tab(icon: Icon(Icons.sos_outlined), text: 'SOS'),
               Tab(icon: Icon(Icons.people_outline), text: 'Turistas'),
               Tab(icon: Icon(Icons.forum_outlined), text: 'Comunidad'),
+               Tab(icon: Icon(Icons.translate), text: 'Expresiones'),
             ],
           ),
         ),
@@ -93,7 +94,8 @@ class _PanelModeracion extends StatelessWidget {
             _SosTab(),
             _TuristasTab(),
             _ComunidadTab(),
-          ],
+             _ExpresionesTab(),
+           ],
         ),
       ),
     );

@@ -123,6 +123,9 @@ class _NotificacionCard extends ConsumerWidget {
     'comunidad_publicacion_eliminada' => Icons.delete_outline,
     'comunidad_publicacion_restringida' => Icons.visibility_off_outlined,
     'comunidad_publicacion_restaurada' => Icons.restore,
+    'cultura_sugerencia' => Icons.translate,
+    'cultura_aprobada' => Icons.check_circle_outline,
+    'cultura_rechazada' => Icons.cancel_outlined,
     _ => Icons.notifications_outlined,
   };
 
@@ -156,6 +159,12 @@ class _NotificacionCard extends ConsumerWidget {
       context.push(Rutas.alertas);
     } else if (notificacion.esDeComunidad) {
       context.push(Rutas.comunidad);
+    } else if (notificacion.esDeCultura) {
+      if (notificacion.tipo == 'cultura_sugerencia') {
+        context.push(Rutas.moderacion);
+      } else {
+        context.push(Rutas.cultura);
+      }
     }
   }
 

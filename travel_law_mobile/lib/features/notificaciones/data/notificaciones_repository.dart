@@ -43,6 +43,7 @@ class Notificacion {
 
   bool get esDeAlerta => tipo.startsWith('alerta_');
   bool get esDeComunidad => tipo.startsWith('comunidad_');
+  bool get esDeCultura => tipo.startsWith('cultura_');
 }
 
 class NotificacionesRepository {

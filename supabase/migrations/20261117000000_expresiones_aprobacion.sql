@@ -139,3 +139,92 @@ $$;
 
 revoke all on function public.moderar_expresion(int, text) from public;
 grant execute on function public.moderar_expresion(int, text) to authenticated;
+-- ---------------------------------------------------------------------
+-- 4. NOTIFICACIÓN A STAFF CUANDO SE PROPONE UNA EXPRESIÓN
+-- ---------------------------------------------------------------------
+create or replace function private.notificar_sugerencia_expresion()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+declare
+  v_autor   text;
+  v_destino text;
+begin
+  if NEW.estado is distinct from 'pendiente' then
+    return NEW;
+  end if;
+
+  select u.nombre into v_autor
+  from public.usuario u
+  where u.id_usuario = NEW.id_usuario;
+
+  select d.nombre into v_destino
+  from public.destino d
+  where d.id_destino = NEW.id_destino;
+
+  insert into public.notificacion (
+    id_usuario, tipo, titulo, mensaje, id_destino
+  )
+  select u.id_usuario,
+         'cultura_sugerencia',
+         'Nueva expresión cultural',
+         coalesce(v_autor, 'Un viajero') || ' propuso "' || NEW.expresion
+           || '" en ' || coalesce(v_destino, 'un destino') || '.',
+         NEW.id_destino
+  from public.usuario u
+  join public.rol r on r.id_rol = u.id_rol
+  where r.nombre in ('moderador', 'administrador')
+    and u.estado = 'activo'
+    and (NEW.id_usuario is null or u.id_usuario <> NEW.id_usuario);
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_notificar_sugerencia_expresion
+  on public.expresion_cultural;
+
+create trigger trg_notificar_sugerencia_expresion
+  after insert on public.expresion_cultural
+  for each row
+  execute function private.notificar_sugerencia_expresion();
+
+-- ---------------------------------------------------------------------
+-- 5. NOTIFICACIÓN AL AUTOR CUANDO SE MODERA SU EXPRESIÓN
+-- ---------------------------------------------------------------------
+create or replace function private.notificar_moderacion_expresion()
+returns trigger language plpgsql security definer set search_path = ''
+as $$
+begin
+  if OLD.estado is distinct from 'pendiente' then
+    return NEW;
+  end if;
+  if NEW.estado not in ('aprobada', 'rechazada') then
+    return NEW;
+  end if;
+  if NEW.id_usuario is null then
+    return NEW;
+  end if;
+
+  insert into public.notificacion (id_usuario, tipo, titulo, mensaje, id_destino)
+  values (
+    NEW.id_usuario,
+    case when NEW.estado = 'aprobada' then 'cultura_aprobada' else 'cultura_rechazada' end,
+    case when NEW.estado = 'aprobada' then 'Expresión aprobada' else 'Expresión rechazada' end,
+    case when NEW.estado = 'aprobada'
+         then 'Tu expresión "' || NEW.expresion || '" fue aprobada y ya es visible para todos.'
+         else 'Tu expresión "' || NEW.expresion || '" no fue aprobada por el equipo de TravelLaw.'
+    end,
+    NEW.id_destino
+  );
+
+  return NEW;
+end;
+$$;
+
+drop trigger if exists trg_notificar_moderacion_expresion
+  on public.expresion_cultural;
+
+create trigger trg_notificar_moderacion_expresion
+  after update of estado on public.expresion_cultural
+  for each row
+  execute function private.notificar_moderacion_expresion();
