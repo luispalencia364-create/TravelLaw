@@ -6,6 +6,7 @@ import '../../../core/widgets/empty_state.dart';
 import '../../alertas/data/alertas_repository.dart';
 import '../../auth/data/perfil_provider.dart';
 import '../../comunidad/data/comunidad_repository.dart';
+import '../../cultura/data/cultura_repository.dart';
 import '../data/admin_repository.dart';
 import '../data/contenido_repository.dart';
 import '../data/moderacion_repository.dart';
@@ -70,7 +71,7 @@ class _PanelModeracion extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 5,
+      length: 6,
       child: Scaffold(
         appBar: AppBar(
           title: const Text('Moderación'),
@@ -1033,6 +1034,170 @@ class _ComunidadTabState extends ConsumerState<_ComunidadTab> {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+// ─────────────────────────────────────────────────────────────
+// Expresiones culturales pendientes de aprobación
+// ─────────────────────────────────────────────────────────────
+class _ExpresionesTab extends ConsumerStatefulWidget {
+  const _ExpresionesTab();
+
+  @override
+  ConsumerState<_ExpresionesTab> createState() => _ExpresionesTabState();
+}
+
+class _ExpresionesTabState extends ConsumerState<_ExpresionesTab> {
+  final Set<int> _ocupados = {};
+
+  Future<void> _moderar(Expresion e, String accion) async {
+    setState(() => _ocupados.add(e.id));
+    try {
+      await moderarExpresion(ref, e.id, accion);
+      ref.invalidate(expresionesPendientesProvider);
+      ref.invalidate(expresionesProvider);
+      if (!mounted) return;
+      _mensaje(
+        context,
+        accion == 'aprobar'
+            ? 'Expresión aprobada y visible para todos.'
+            : 'Expresión rechazada.',
+      );
+    } on Exception catch (ex) {
+      if (mounted) _mensaje(context, mensajeErrorContenido(ex));
+    } finally {
+      if (mounted) setState(() => _ocupados.remove(e.id));
+    }
+  }
+
+  Future<void> _eliminar(Expresion e) async {
+    final ok = await _confirmar(
+      context,
+      titulo: 'Eliminar expresión',
+      mensaje: '¿Eliminar "${e.expresion}"? Esta acción no se puede deshacer.',
+      accion: 'Eliminar',
+    );
+    if (!ok || !mounted) return;
+    setState(() => _ocupados.add(e.id));
+    try {
+      await eliminarExpresion(ref, e.id);
+      ref.invalidate(expresionesPendientesProvider);
+      ref.invalidate(expresionesProvider);
+      if (!mounted) return;
+      _mensaje(context, 'Expresión eliminada.');
+    } on Exception catch (ex) {
+      if (mounted) _mensaje(context, mensajeErrorContenido(ex));
+    } finally {
+      if (mounted) setState(() => _ocupados.remove(e.id));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final async = ref.watch(expresionesPendientesProvider);
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
+          child: Text(
+            'Expresiones propuestas por los viajeros pendientes de aprobación.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        Expanded(
+          child: AsyncListView<Expresion>(
+            value: async,
+            emptyIcon: Icons.task_alt_outlined,
+            emptyMessage: 'No hay expresiones pendientes',
+            emptyDetail:
+                'Las expresiones propuestas por los viajeros aparecerán aquí.',
+            onRefresh: () async {
+              ref.invalidate(expresionesPendientesProvider);
+              await ref.read(expresionesPendientesProvider.future);
+            },
+            itemBuilder: (context, e) => Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.translate, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            e.expresion,
+                            style: Theme.of(context)
+                                .textTheme
+                                .titleSmall
+                                ?.copyWith(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        _ChipEstado(
+                          texto: 'Pendiente',
+                          color: Theme.of(context).colorScheme.tertiary,
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text('ES: ${e.significadoEs}'),
+                    if (e.significadoEn != null &&
+                        e.significadoEn!.trim().isNotEmpty)
+                      Text('EN: ${e.significadoEn}'),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Por ${e.idUsuario ?? 'un viajero'}',
+                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                            color: Theme.of(context).colorScheme.outline,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    if (_ocupados.contains(e.id))
+                      const Center(
+                        child: SizedBox(
+                          width: 22,
+                          height: 22,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    else
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        children: [
+                          FilledButton.icon(
+                            onPressed: () => _moderar(e, 'aprobar'),
+                            icon: const Icon(Icons.check),
+                            label: const Text('Aprobar'),
+                          ),
+                          OutlinedButton.icon(
+                            onPressed: () => _moderar(e, 'rechazar'),
+                            icon: const Icon(Icons.close),
+                            label: const Text('Rechazar'),
+                          ),
+                          TextButton.icon(
+                            onPressed: () => _eliminar(e),
+                            icon: Icon(Icons.delete_outline,
+                                color: Theme.of(context).colorScheme.error),
+                            label: Text(
+                              'Eliminar',
+                              style: TextStyle(
+                                  color: Theme.of(context).colorScheme.error),
+                            ),
+                          ),
+                        ],
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 }

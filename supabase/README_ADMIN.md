@@ -13,7 +13,8 @@ En **Supabase → SQL Editor**, ejecuta en este orden:
 7. `supabase/migrations/20261114000000_comunidad_social.sql`
 8. `supabase/migrations/20261115000000_notificaciones.sql`
 9. `supabase/migrations/20261116000000_moderacion_comunidad.sql`
-10. `supabase/seed.sql`
+10. `supabase/migrations/20261117000000_expresiones_aprobacion.sql`
+11. `supabase/seed.sql`
 
 El primero crea el rol de **superadministrador**, las funciones para
 crear/gestionar cuentas y las protecciones para que nadie pueda ascenderse
@@ -34,7 +35,10 @@ para turistas: guarda el destino activo y la última ubicación, crea la
 tabla `notificacion` con RLS y Realtime, y avisa de alertas de la zona,
 me gusta y comentarios. El noveno añade la **moderación de la comunidad**:
 restringir, eliminar o restaurar publicaciones, con aviso al autor. El
-décimo crea el administrador de ejemplo.
+décimo permite que cualquier viajero proponga **expresiones culturales**
+que quedan pendientes hasta que un moderador o administrador las
+apruebe; solo las aprobadas son visibles para el resto. El
+undécimo crea el administrador de ejemplo.
 
 > Es importante aplicar la migración antes de abrir la app: el perfil del
 > usuario ahora incluye la columna `es_super_admin`.
